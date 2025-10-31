@@ -2,6 +2,7 @@
   "expo": {
     "name": "AfroBeats Quiz",
     "slug": "afrobeats-quiz",
+    "owner": "joevics1",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
