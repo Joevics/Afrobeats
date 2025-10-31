@@ -9,7 +9,14 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "description": "Test your knowledge of African music with AfroBeats Quiz! Challenge yourself with songs, artists, and lyrics from across the continent.",
-    "keywords": ["afrobeats", "music", "quiz", "africa", "entertainment", "games"],
+    "keywords": [
+      "afrobeats",
+      "music",
+      "quiz",
+      "africa",
+      "entertainment",
+      "games"
+    ],
     "privacy": "public",
     "ios": {
       "supportsTablet": true,
@@ -68,7 +75,11 @@
     "extra": {
       "API_BASE_URL": "https://gnsjnbwkmiqribcvpeeh.supabase.co/functions/v1/quiz-api",
       "SUPABASE_URL": "https://gnsjnbwkmiqribcvpeeh.supabase.co",
-      "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imduc2puYndrbWlxcmliY3ZwZWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwNzkwNjgsImV4cCI6MjA3MTY1NTA2OH0.ad2mgHnVZAELxIVoJgc5NAoX_Ame5duw75P-oncLxEI"
+      "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imduc2puYndrbWlxcmliY3ZwZWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwNzkwNjgsImV4cCI6MjA3MTY1NTA2OH0.ad2mgHnVZAELxIVoJgc5NAoX_Ame5duw75P-oncLxEI",
+      "router": {},
+      "eas": {
+        "projectId": "82ac7829-1de1-404d-856a-9710f7e82f9b"
+      }
     }
   }
 }
