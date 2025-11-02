@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Dimensions,
   Alert,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +31,8 @@ import { getQuestions, saveLeaderboardScore, syncPendingScoresToSupabase, cleanu
 import { pickApiCategoryForSession } from '../services/categoryMap';
 import { getDeviceId } from '../services/deviceId';
 import { useAudioCache } from '../hooks/useAudioCache';
+import BannerAdComponent from '../components/ads/BannerAdComponent';
+import ReportSongModal from './components/ReportSongModal';
 // AdMob temporarily disabled for web compatibility
 // import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
@@ -105,6 +109,7 @@ export default function GameScreen() {
   const [loading, setLoading] = useState(true);
   const [calculatingScore, setCalculatingScore] = useState(false);
   const [lastPointsEarned, setLastPointsEarned] = useState(0);
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const stopTimeoutRef = useRef<number | null>(null);
   
@@ -124,6 +129,7 @@ export default function GameScreen() {
   const isHardMode = params.difficulty === 'hard';
   const isSpeedMode = params.speedMode === 'true';
   const isLyricsMode = params.quizMode === 'lyrics';
+  const [showReportModal, setShowReportModal] = useState(false);
   
   // Calculate timer duration based on difficulty and speed mode
   const getTimerDuration = () => {
@@ -247,20 +253,10 @@ export default function GameScreen() {
           return;
         }
 
-        Alert.alert(
-          'Unable to Load Game',
-          errorMsg,
-          [
-            {
-              text: 'Retry',
-              onPress: () => {
-                setLoading(true);
-                bootstrap(0);
-              }
-            },
-            { text: 'Home', onPress: () => router.push('/') }
-          ]
-        );
+        // Simple alert for audio mode only
+        if (!isLyricsMode) {
+          Alert.alert('Connection Required', 'Internet connection required to play audio quiz game. Check your connection.');
+        }
       } finally {
         setLoading(false);
       }
@@ -1058,6 +1054,13 @@ export default function GameScreen() {
   return (
     <LinearGradient colors={['#111827', '#1F2937', '#111827']} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
+        <ReportSongModal
+          visible={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          phone={'+2347056928186'}
+          title={'Report or Suggest Changes'}
+          defaultMessage={`Report: The song/audio didn't play.\nCategory: ${String(params.category)}\nMode: ${String(params.quizMode)}\nID: ${currentQ?.id || ''}\nSong: ${currentQ?.songTitle || ''}\nArtist: ${currentQ?.artistName || ''}`}
+        />
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -1093,6 +1096,12 @@ export default function GameScreen() {
                 {loadingProgress.percentage}%
               </Text>
             )}
+            <Text
+              onPress={() => setShowReportModal(true)}
+              style={{ marginLeft: 8, color: '#8B5CF6', fontWeight: '700', textDecorationLine: 'underline', fontSize: 12 }}
+            >
+              Report
+            </Text>
           </View>
         </View>
 
@@ -1273,6 +1282,14 @@ export default function GameScreen() {
           })}
         </View>
 
+        {/* Banner Ad - Under options */}
+        <View style={styles.bannerAdContainer}>
+          <BannerAdComponent 
+            style={styles.bannerAd}
+            refreshInterval={35}
+          />
+        </View>
+
         {/* Feedback Overlay */}
         {showFeedback && (
           <View style={[styles.feedbackOverlay]}>
@@ -1298,12 +1315,47 @@ export default function GameScreen() {
           </View>
         )}
 
-        {/* Quiz Disclaimer */}
-        <View style={styles.quizDisclaimerContainer}>
+        {/* Quiz Disclaimer - Clickable */}
+        <TouchableOpacity 
+          style={styles.quizDisclaimerContainer}
+          onPress={() => setShowDisclaimerModal(true)}
+          activeOpacity={0.7}
+        >
           <Text style={styles.quizDisclaimerText}>
-            All music belongs to their respective owners. Used for educational purposes only.
+            All music belongs to their respective owners.
           </Text>
-        </View>
+        </TouchableOpacity>
+
+        {/* Disclaimer Modal */}
+        <Modal
+          visible={showDisclaimerModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowDisclaimerModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Disclaimer</Text>
+              <ScrollView style={styles.modalScrollView}>
+                <Text style={styles.modalText}>
+                  All music belongs to their respective owners. This application uses short audio clips and song lyrics solely for educational and entertainment purposes.
+                  {'\n\n'}
+                  The content provided in this quiz is intended to test users' knowledge of music and does not claim ownership of any musical works, lyrics, or compositions.
+                  {'\n\n'}
+                  If you are the owner of any content used in this application and wish to have it removed, please contact us through the in-app reporting feature.
+                  {'\n\n'}
+                  All trademarks, service marks, and trade names are the property of their respective owners.
+                </Text>
+              </ScrollView>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowDisclaimerModal(false)}
+              >
+                <Text style={styles.modalCloseButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -1457,7 +1509,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 8,
     gap: 16,
   },
   audioButton: {
@@ -1484,12 +1536,14 @@ const styles = StyleSheet.create({
   optionsContainer: {
     flex: 1,
     paddingHorizontal: 20,
+    paddingVertical: 4,
     gap: 8,
   },
   optionButton: {
     backgroundColor: '#374151',
     borderRadius: 12,
-    padding: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1597,10 +1651,11 @@ const styles = StyleSheet.create({
     maxWidth: 250,
   },
   quizDisclaimerContainer: {
-    marginTop: 12,
+    marginTop: 4,
     paddingHorizontal: 20,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
+    paddingVertical: 4,
   },
   quizDisclaimerText: {
     color: '#6B7280',
@@ -1608,6 +1663,56 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
     lineHeight: 14,
+    textDecorationLine: 'underline',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontFamily: 'Inter-Bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalScrollView: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  modalText: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    fontFamily: 'Inter-Regular',
+    lineHeight: 22,
+    textAlign: 'left',
+  },
+  modalCloseButton: {
+    backgroundColor: '#8B5CF6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  modalCloseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
   },
   lyricsContainer: {
     backgroundColor: '#374151',
@@ -1654,13 +1759,16 @@ const styles = StyleSheet.create({
   },
   audioControlsWrapper: {
     alignItems: 'center',
-    paddingVertical: 16,
-    gap: 16,
+    paddingVertical: 8,
+    gap: 12,
   },
-  // Ad-related styles - Temporarily disabled
-  // bannerAdContainer: {
-  //   alignItems: 'center',
-  //   marginVertical: 12,
-  //   paddingHorizontal: 20,
-  // },
+  bannerAdContainer: {
+    alignItems: 'center',
+    marginVertical: 8,
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  bannerAd: {
+    width: '100%',
+  },
 });

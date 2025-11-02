@@ -22,8 +22,7 @@ import {
   Clock,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// AdMob temporarily disabled for web compatibility
-// import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import BannerAdComponent from '../components/ads/BannerAdComponent';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -52,7 +51,7 @@ const StarField = () => {
   return (
     <View style={styles.starField}>
       {stars.map((star) => (
-        <AnimatedStar star={star} />
+        <AnimatedStar key={star.id} star={star} />
       ))}
     </View>
   );
@@ -254,16 +253,13 @@ export default function HistoryDetailScreen() {
           <View style={styles.placeholder} />
         </View>
 
-        {/* Top Banner Ad - Temporarily disabled */}
-        {/* <View style={styles.bannerAdContainer}>
-          <BannerAd
-            unitId={TestIds.BANNER}
-            size={BannerAdSize.BANNER}
-            requestOptions={{
-              requestNonPersonalizedAdsOnly: true,
-            }}
+        {/* Top Banner Ad */}
+        <View style={styles.bannerAdContainer}>
+          <BannerAdComponent 
+            style={styles.bannerAd}
+            refreshInterval={35}
           />
-        </View> */}
+        </View>
 
         <View style={styles.contentContainer}>
           <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -311,6 +307,7 @@ export default function HistoryDetailScreen() {
               </View>
               {correctQuestions.map((question, index) => (
                 <QuestionCard
+                  key={question.id}
                   question={question}
                   index={index}
                   delay={index * 100}
@@ -319,18 +316,15 @@ export default function HistoryDetailScreen() {
             </View>
           )}
 
-          {/* Middle Banner Ad - Show if more than 5 questions total - Temporarily disabled */}
-          {/* {historyEntry.questions.length > 5 && (
+          {/* Middle Banner Ad - Show if more than 5 questions total */}
+          {historyEntry.questions.length > 5 && (
             <View style={styles.bannerAdContainer}>
-              <BannerAd
-                unitId={TestIds.BANNER}
-                size={BannerAdSize.BANNER}
-                requestOptions={{
-                  requestNonPersonalizedAdsOnly: true,
-                }}
+              <BannerAdComponent 
+                style={styles.bannerAd}
+                refreshInterval={50}
               />
             </View>
-          )} */}
+          )}
 
           {/* Incorrect Questions */}
           {incorrectQuestions.length > 0 && (
@@ -352,16 +346,13 @@ export default function HistoryDetailScreen() {
           </ScrollView>
         </View>
 
-        {/* Bottom Banner Ad - Temporarily disabled */}
-        {/* <View style={styles.bannerAdContainer}>
-          <BannerAd
-            unitId={TestIds.BANNER}
-            size={BannerAdSize.BANNER}
-            requestOptions={{
-              requestNonPersonalizedAdsOnly: true,
-            }}
+        {/* Bottom Banner Ad */}
+        <View style={styles.bannerAdContainer}>
+          <BannerAdComponent 
+            style={styles.bannerAd}
+            refreshInterval={35}
           />
-        </View> */}
+        </View>
 
         {/* Bottom Safe Area */}
         <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea} />
@@ -684,10 +675,12 @@ const styles = StyleSheet.create({
   bottomSafeArea: {
     backgroundColor: 'transparent',
   },
-  // Ad-related styles - Temporarily disabled
-  // bannerAdContainer: {
-  //   alignItems: 'center',
-  //   marginVertical: 12,
-  //   paddingHorizontal: 20,
-  // },
+  bannerAdContainer: {
+    alignItems: 'center',
+    marginVertical: 12,
+    paddingHorizontal: 20,
+  },
+  bannerAd: {
+    width: '100%',
+  },
 });

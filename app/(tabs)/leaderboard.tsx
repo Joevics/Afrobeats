@@ -32,7 +32,9 @@ import Animated, {
   withSequence,
   Easing,
 } from 'react-native-reanimated';
+import ReportSongModal from '../components/ReportSongModal';
 import { getOverallLeaderboard, getMyOverallRank, getCategoryLeaderboard, getMyCategoryRank, getUsernameLocally, saveUsernameLocally, updateUsernameInSupabase } from '../../services/quizApi';
+import BannerAdComponent from '../../components/ads/BannerAdComponent';
 
 const getCategoryColumn = (category: string): string => {
   const columnMap: { [key: string]: string } = {
@@ -87,6 +89,7 @@ export default function LeaderboardScreen() {
   const [allLeaderboardData, setAllLeaderboardData] = useState<{ [key: string]: any[] }>({});
   const [allUserRanks, setAllUserRanks] = useState<{ [key: string]: any }>({});
   const [loading, setLoading] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
 
   const crownAnimation = useSharedValue(0);
   const medalAnimation = useSharedValue(0);
@@ -128,6 +131,7 @@ export default function LeaderboardScreen() {
 
       const newLeaderboardData: { [key: string]: any[] } = {};
       const newUserRanks: { [key: string]: any } = {};
+      let hadAnyError = false;
 
       // Load all categories in parallel
       const loadPromises = CATEGORIES.map(async (category) => {
@@ -152,6 +156,8 @@ export default function LeaderboardScreen() {
           if (__DEV__) console.log(`Error loading ${category}:`, error);
           newLeaderboardData[category] = [];
           newUserRanks[category] = null;
+          // leave data empty on error
+          hadAnyError = true;
         }
       });
 
@@ -161,9 +167,15 @@ export default function LeaderboardScreen() {
       setAllUserRanks(newUserRanks);
 
       if (__DEV__) console.log('All leaderboard data loaded successfully');
+      // Simple alert if any category failed
+      if (hadAnyError) {
+        Alert.alert('Connection Required', 'Internet connection required to fetch leaderboard. Check your connection.');
+      }
 
     } catch (error) {
       console.error('Error loading all leaderboard data:', error);
+      // silent on total error, empty data already set below
+      Alert.alert('Connection Required', 'Internet connection required to fetch leaderboard. Check your connection.');
       // Set empty data on error
       const emptyData = CATEGORIES.reduce((acc, category) => {
         acc[category] = [];
@@ -211,7 +223,7 @@ export default function LeaderboardScreen() {
 
     } catch (error) {
       if (__DEV__) console.log('Error saving username:', error);
-      Alert.alert('Error', 'Failed to save username. Please try again.');
+      Alert.alert('Connection Error', 'Failed to save username. Please check your internet connection and try again.');
     } finally {
       setSavingUsername(false);
     }
@@ -374,6 +386,13 @@ export default function LeaderboardScreen() {
   return (
     <LinearGradient colors={['#0f0c29', '#302b63', '#24243e']} style={styles.container}>
       <View style={styles.safeArea}>
+        <ReportSongModal
+          visible={showContactModal}
+          onClose={() => setShowContactModal(false)}
+          phone={'+2347056928186'}
+          title={'Contact via WhatsApp'}
+          defaultMessage={'Hello, I have feedback/suggestions about the leaderboard.'}
+        />
         {/* Static Header */}
         <View style={styles.header}>
           <Animated.View style={crownStyle}>
@@ -385,6 +404,12 @@ export default function LeaderboardScreen() {
               ? 'Top players across all categories'
               : `Top players in ${categoryLabels[selectedCategory as keyof typeof categoryLabels].toLowerCase()}`
             }
+          </Text>
+          <Text
+            onPress={() => setShowContactModal(true)}
+            style={{ marginTop: 8, color: '#8B5CF6', fontWeight: '700', textDecorationLine: 'underline' }}
+          >
+            Report/Suggest via WhatsApp
           </Text>
         </View>
 
@@ -430,6 +455,13 @@ export default function LeaderboardScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
+          {/* Banner Ad - Top */}
+          <View style={styles.bannerAdContainer}>
+            <BannerAdComponent 
+              style={styles.bannerAd}
+              refreshInterval={35}
+            />
+          </View>
 
           {/* Your Rank Card */}
           {currentUser ? (
@@ -517,7 +549,8 @@ export default function LeaderboardScreen() {
             </Text>
             {leaderboardData.length > 0 ? (
               leaderboardData.map((player, index) => (
-                <View key={player.device_id || index} style={styles.playerCard}>
+                <React.Fragment key={player.device_id || index}>
+                  <View style={styles.playerCard}>
                   <View style={styles.playerRank}>
                     {getRankIcon(index + 1)}
                   </View>
@@ -534,6 +567,17 @@ export default function LeaderboardScreen() {
                     {selectedCategory === 'overall' ? (player.total_score || 0) : (player[getCategoryColumn(selectedCategory)] || 0)}
                   </Text>
                 </View>
+
+                  {/* Show banner ad after every 5th player */}
+                  {(index + 1) % 5 === 0 && (
+                    <View style={styles.bannerAdContainer}>
+                      <BannerAdComponent 
+                        style={styles.bannerAd}
+                        refreshInterval={50}
+                      />
+                    </View>
+                  )}
+                </React.Fragment>
               ))
             ) : (
               <View style={styles.emptyState}>
@@ -969,5 +1013,13 @@ const styles = StyleSheet.create({
   },
   selectedCategoryButtonText: {
     color: '#FFFFFF',
+  },
+  bannerAdContainer: {
+    alignItems: 'center',
+    marginVertical: 12,
+    paddingHorizontal: 20,
+  },
+  bannerAd: {
+    width: '100%',
   },
 });

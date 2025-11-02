@@ -13,6 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Search, Trash2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import InterstitialAdComponent from '../../components/ads/InterstitialAdComponent';
+import BannerAdComponent from '../../components/ads/BannerAdComponent';
 
 interface SavedSong {
   id: string;
@@ -25,6 +27,8 @@ interface SavedSong {
 export default function SongListScreen() {
   const [savedSongs, setSavedSongs] = useState<SavedSong[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showInterstitialAd, setShowInterstitialAd] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ type: 'spotify' | 'google', songTitle: string, artist: string } | null>(null);
 
   useEffect(() => {
     loadSavedSongs();
@@ -34,7 +38,11 @@ export default function SongListScreen() {
     try {
       const songs = await AsyncStorage.getItem('savedSongs');
       if (songs) {
-        setSavedSongs(JSON.parse(songs));
+        const parsed: SavedSong[] = JSON.parse(songs);
+        const sorted = Array.isArray(parsed)
+          ? [...parsed].sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime())
+          : [];
+        setSavedSongs(sorted);
       }
     } catch (error) {
       if (__DEV__) console.error('Error loading saved songs:', error);
@@ -54,30 +62,56 @@ export default function SongListScreen() {
   };
 
   const handleSpotifySearch = async (songTitle: string, artist: string) => {
-    const query = encodeURIComponent(`${songTitle} ${artist}`);
-    const spotifyUrl = `spotify:search:${query}`;
-    const webUrl = `https://open.spotify.com/search/${query}`;
-    
-    try {
-      const canOpen = await Linking.canOpenURL(spotifyUrl);
-      if (canOpen) {
-        await Linking.openURL(spotifyUrl);
-      } else {
-        await Linking.openURL(webUrl);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Could not open Spotify');
-    }
+    // Show ad first, then open Spotify
+    setPendingAction({ type: 'spotify', songTitle, artist });
+    setShowInterstitialAd(true);
   };
 
   const handleGoogleSearch = async (songTitle: string, artist: string) => {
-    const query = encodeURIComponent(`${songTitle} ${artist} download`);
-    const googleUrl = `https://www.google.com/search?q=${query}`;
-    
-    try {
-      await Linking.openURL(googleUrl);
-    } catch (error) {
-      Alert.alert('Error', 'Could not open Google search');
+    // Show ad first, then open Google search
+    setPendingAction({ type: 'google', songTitle, artist });
+    setShowInterstitialAd(true);
+  };
+
+  const handleAdClosed = async () => {
+    setShowInterstitialAd(false);
+    if (pendingAction) {
+      // Execute pending action after ad closes
+      const { type, songTitle, artist } = pendingAction;
+      
+      if (type === 'spotify') {
+        const raw = `${songTitle} ${artist}`.trim();
+        const encoded = encodeURIComponent(raw);
+        // Try multiple Spotify app-only schemes; no web fallback
+        const candidates = [
+          `spotify:search:${encoded}`,
+          `spotify://search?q=${encoded}`,
+        ];
+
+        let opened = false;
+        for (const url of candidates) {
+          try {
+            await Linking.openURL(url);
+            opened = true;
+            break;
+          } catch {}
+        }
+
+        if (!opened) {
+          Alert.alert('Spotify app not found', 'Use web search option');
+        }
+      } else if (type === 'google') {
+        const query = encodeURIComponent(`${songTitle} ${artist} download`);
+        const googleUrl = `https://www.google.com/search?q=${query}`;
+        
+        try {
+          await Linking.openURL(googleUrl);
+        } catch (error) {
+          Alert.alert('Error', 'Could not open Google search');
+        }
+      }
+      
+      setPendingAction(null);
     }
   };
 
@@ -142,6 +176,16 @@ export default function SongListScreen() {
             </Text>
           </View>
 
+          {/* Banner Ad - Top */}
+          {savedSongs.length > 0 && (
+            <View style={styles.bannerAdContainer}>
+              <BannerAdComponent 
+                style={styles.bannerAd}
+                refreshInterval={35}
+              />
+            </View>
+          )}
+
           {savedSongs.length === 0 ? (
             /* Empty State */
             <View style={styles.emptyState}>
@@ -155,7 +199,8 @@ export default function SongListScreen() {
             /* Songs List */
             <View style={styles.songsContainer}>
               {savedSongs.map((song, index) => (
-                <View key={song.id} style={styles.songCard}>
+                <React.Fragment key={song.id}>
+                  <View style={styles.songCard}>
                   <View style={styles.songHeader}>
                     <View style={styles.songInfo}>
                       <Text style={styles.categoryIcon}>{getCategoryIcon(song.category)}</Text>
@@ -206,11 +251,31 @@ export default function SongListScreen() {
                     </View>
                   </View>
                 </View>
+
+                  {/* Show banner ad after every 5th song */}
+                  {(index + 1) % 5 === 0 && (
+                    <View style={styles.bannerAdContainer}>
+                      <BannerAdComponent 
+                        style={styles.bannerAd}
+                        refreshInterval={50}
+                      />
+                    </View>
+                  )}
+                </React.Fragment>
               ))}
             </View>
           )}
         </ScrollView>
       </View>
+
+      {/* Interstitial Ad */}
+      {showInterstitialAd && (
+        <InterstitialAdComponent
+          visible={showInterstitialAd}
+          onAdClosed={handleAdClosed}
+          onAdFailed={handleAdClosed}
+        />
+      )}
     </LinearGradient>
   );
 }
@@ -365,5 +430,13 @@ const styles = StyleSheet.create({
   spotifyLogo: {
     width: 32,
     height: 32,
+  },
+  bannerAdContainer: {
+    marginVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  bannerAd: {
+    width: '100%',
   },
 });

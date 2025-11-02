@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 
 type Props = {
   children: React.ReactNode;
@@ -17,7 +17,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: any) {
-    return { hasError: true, errorMessage: error?.message || 'Something went wrong.' };
+    return { hasError: true, errorMessage: 'Please check your internet connection and try again.' };
   }
 
   componentDidCatch(error: any, info: any) {
@@ -31,15 +31,36 @@ export class ErrorBoundary extends React.Component<Props, State> {
     this.setState({ hasError: false, errorMessage: undefined });
   };
 
+  handleReport = () => {
+    const phoneNumber = '+2348092998662';
+    const message = encodeURIComponent('I encountered an error in AfroBeats Quiz app. Please help.');
+    const whatsappUrl = `https://wa.me/${phoneNumber.replace(/[^0-9]/g, '')}?text=${message}`;
+    
+    Linking.openURL(whatsappUrl).catch(() => {
+      // Fallback if WhatsApp is not installed
+      const smsUrl = `sms:${phoneNumber}?body=${message}`;
+      Linking.openURL(smsUrl).catch(() => {
+        if (__DEV__) console.log('Could not open WhatsApp or SMS');
+      });
+    });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
         <View style={styles.container}>
           <Text style={styles.title}>Oops! An error occurred</Text>
-          <Text style={styles.message}>{this.state.errorMessage}</Text>
-          <TouchableOpacity onPress={this.handleReload} style={styles.button}>
-            <Text style={styles.buttonText}>Try Again</Text>
-          </TouchableOpacity>
+          <Text style={styles.message}>
+            {this.state.errorMessage || 'Please check your internet connection and try again.'}
+          </Text>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity onPress={this.handleReload} style={styles.button}>
+              <Text style={styles.buttonText}>Try Again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={this.handleReport} style={styles.reportButton}>
+              <Text style={styles.reportButtonText}>Report Issue</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
@@ -67,6 +88,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
   button: {
     backgroundColor: '#8B5CF6',
     paddingHorizontal: 16,
@@ -74,6 +100,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   buttonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  reportButton: {
+    backgroundColor: '#25D366',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  reportButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
   },

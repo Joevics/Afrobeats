@@ -12,6 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { initializeQuestionCaches } from '../../services/quizApi';
 import {
   Play,
   Zap,
@@ -308,6 +309,11 @@ export default function HomeScreen() {
     );
   }, []);
 
+  // Prefetch questions cache on app launch (lyrics playable offline)
+  useEffect(() => {
+    initializeQuestionCaches().catch(() => {});
+  }, []);
+
   const musicIconStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: musicIconFloat.value }],
   }));
@@ -452,8 +458,7 @@ export default function HomeScreen() {
         {/* Disclaimer - Below start button */}
         <Animated.View entering={FadeInUp.delay(800)} style={styles.disclaimerContainer}>
           <Text style={styles.disclaimerText}>
-            Disclaimer: All music belongs to their respective owners.{'\n'}
-            This app uses short previews solely for quiz and educational purposes.
+          Disclaimer: All Music belongs to respective owners. Short previews are solely for educational purposes only.
           </Text>
         </Animated.View>
       </SafeAreaView>
@@ -488,12 +493,12 @@ const styles = StyleSheet.create({
     position: 'relative', // Allow absolute positioning of children
   },
   musicIcon: {
-    fontSize: 40,
+    fontSize: 32,
     marginBottom: 5,
     color: '#8B5CF6',
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
     color: '#FFFFFF',
     fontFamily: 'Inter-Bold',
@@ -508,7 +513,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: 'Inter-SemiBold',
     marginBottom: 8,
@@ -516,7 +521,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   categoryScroll: {
-    gap: 12,
+    gap: 10,
     paddingHorizontal: 4,
   },
   gameTypeGrid: {
@@ -565,13 +570,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backdropFilter: 'blur(10px)',
     minWidth: 80,
-    height: 80, // Fixed height for uniformity
+    height: 65, // Fixed height for uniformity
   },
   selectedCard: {
     borderColor: '#8a2be2',
@@ -596,8 +601,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   categoryCardIcon: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontSize: 28,
+    marginBottom: 6,
   },
   cardLabel: {
     color: '#FFFFFF',
@@ -637,7 +642,7 @@ const styles = StyleSheet.create({
   },
   speedModeText: {
     color: '#9CA3AF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
   },
@@ -645,9 +650,9 @@ const styles = StyleSheet.create({
     color: '#ffd700',
   },
   toggleSwitch: {
-    width: 40,
-    height: 22,
-    borderRadius: 11,
+    width: 36,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#4B5563',
     padding: 2,
     justifyContent: 'center',
@@ -656,15 +661,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B',
   },
   toggleCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#D1D5DB',
     transform: [{ translateX: 0 }],
   },
   toggleCircleActive: {
     backgroundColor: '#FFFFFF',
-    transform: [{ translateX: 18 }],
+    transform: [{ translateX: 16 }],
   },
   startButtonPressable: {
     borderRadius: 14,
@@ -675,15 +680,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   startButtonGradient: {
-    paddingVertical: 14,
-    paddingHorizontal: 40,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 220,
+    minWidth: 200,
   },
   startButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     fontFamily: 'Inter-Bold',
   },
@@ -715,23 +720,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   radioButtonSelected: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#8a2be2',
   },
   radioButtonLabel: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
   },
@@ -766,7 +771,7 @@ const styles = StyleSheet.create({
   dropdownButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     flexDirection: 'row',
@@ -798,10 +803,10 @@ const styles = StyleSheet.create({
     },
   settingsTitle: {
     color: '#FFFFFF',
-    fontSize: 20, // Made bigger
+    fontSize: 16,
     fontWeight: 'bold',
     fontFamily: 'Inter-Bold',
-    marginBottom: 16,
+    marginBottom: 12,
     textAlign: 'center',
   },
   quizModeInSettings: {
@@ -809,10 +814,10 @@ const styles = StyleSheet.create({
   },
   quizModeTitle: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: 'Inter-SemiBold',
-    marginBottom: 12,
+    marginBottom: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -884,11 +889,11 @@ const styles = StyleSheet.create({
   // Absolute Positioning Styles
   headerAbsolute: {
     position: 'absolute',
-    top: 35, // Moved down 20px (15px + 20px = 35px)
+    top: 35,
     left: 15,
     right: 15,
     alignItems: 'center',
-    paddingVertical: 15,
+    paddingVertical: 10,
   },
   sectionAbsolute: {
     position: 'absolute',
@@ -898,12 +903,12 @@ const styles = StyleSheet.create({
   },
   settingsSectionAbsolute: {
     position: 'absolute',
-    top: 325, // Moved up another 10px (335px - 10px = 325px)
+    top: 325,
     left: 15,
     right: 15,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 16, // Add padding on all sides
-    borderRadius: 12, // Roundish edges
+    padding: 12,
+    borderRadius: 12,
   },
   speedModeAbsolute: {
     position: 'absolute',

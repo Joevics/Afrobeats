@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { StatusBar } from 'expo-status-bar';
@@ -11,7 +12,7 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
-import { Platform } from 'react-native';
+import CustomSplashScreen from '../components/CustomSplashScreen';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -26,30 +27,56 @@ export default function RootLayout() {
     'Inter-Bold': Inter_700Bold,
   });
 
+  const [showCustomSplash, setShowCustomSplash] = useState(true);
+
   useEffect(() => {
     if (fontsLoaded || fontError) {
+      // Hide native splash first
       SplashScreen.hideAsync();
+      // Then hide custom splash after a brief moment for smooth transition
+      setTimeout(() => {
+        setShowCustomSplash(false);
+      }, 500);
     }
   }, [fontsLoaded, fontError]);
 
   // AdMob removed for production readiness
   // Will be added back when needed for mobile builds
 
-  if (!fontsLoaded && !fontError) {
-    return null;
+  // Show custom splash screen while loading
+  if (showCustomSplash || (!fontsLoaded && !fontError)) {
+    return <CustomSplashScreen onFinish={() => setShowCustomSplash(false)} />;
   }
 
   return (
-    <ErrorBoundary>
-      <>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="game" options={{ presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="results" options={{ presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="+not-found" />
+    <View style={{ flex: 1, backgroundColor: '#0f0c29' }}>
+      <ErrorBoundary>
+        <Stack 
+          screenOptions={{ 
+            headerShown: false,
+            contentStyle: { backgroundColor: '#0f0c29' },
+            animation: 'fade',
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ contentStyle: { backgroundColor: '#1F2937' } }} />
+          <Stack.Screen 
+            name="game" 
+            options={{ 
+              presentation: 'fullScreenModal',
+              contentStyle: { backgroundColor: '#111827' },
+            }} 
+          />
+          <Stack.Screen 
+            name="results" 
+            options={{ 
+              presentation: 'fullScreenModal',
+              contentStyle: { backgroundColor: '#0f0c29' },
+            }} 
+          />
+          <Stack.Screen name="+not-found" options={{ contentStyle: { backgroundColor: '#0f0c29' } }} />
         </Stack>
         <StatusBar style="light" backgroundColor="#111827" />
-      </>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </View>
   );
 }

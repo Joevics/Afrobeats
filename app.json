@@ -6,6 +6,11 @@
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f0c29"
+    },
     "scheme": "afrobeats-quiz",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -79,8 +84,11 @@
       "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imduc2puYndrbWlxcmliY3ZwZWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwNzkwNjgsImV4cCI6MjA3MTY1NTA2OH0.ad2mgHnVZAELxIVoJgc5NAoX_Ame5duw75P-oncLxEI",
       "router": {},
       "eas": {
-        "projectId": "82ac7829-1de1-404d-856a-9710f7e82f9b"
+        "projectId": "8389faaf-da7c-4b2b-b028-15bd6fc03815"
       }
+    },
+    "cli": {
+      "appVersionSource": "remote"
     }
   }
 }

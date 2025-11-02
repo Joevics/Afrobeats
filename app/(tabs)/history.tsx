@@ -18,6 +18,7 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import BannerAdComponent from '../../components/ads/BannerAdComponent';
 // AdMob temporarily disabled for web compatibility
 // import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
@@ -230,6 +231,16 @@ const formatDate = (dateString: string) => {
             </View>
           </View>
 
+          {/* Banner Ad - Top */}
+          {gameHistory.length > 0 && (
+            <View style={styles.bannerAdContainer}>
+              <BannerAdComponent 
+                style={styles.bannerAd}
+                refreshInterval={35}
+              />
+            </View>
+          )}
+
           {/* Games List */}
           <View style={styles.gamesContainer}>
             <Text style={styles.sectionTitle}>Recent Games</Text>
@@ -319,20 +330,17 @@ const formatDate = (dateString: string) => {
                 </TouchableOpacity>
               );
 
-              // Add banner ad every 5 items - Temporarily disabled
-              // if ((index + 1) % 5 === 0 && index < gameHistory.length - 1) {
-              //   components.push(
-              //     <View key={`banner-${index}`} style={styles.bannerAdContainer}>
-              //       <BannerAd
-              //         unitId={TestIds.BANNER}
-              //         size={BannerAdSize.BANNER}
-              //         requestOptions={{
-              //           requestNonPersonalizedAdsOnly: true,
-              //         }}
-              //       />
-              //     </View>
-              //   );
-              // }
+              // Add banner ad every 5 items
+              if ((index + 1) % 5 === 0 && index < gameHistory.length - 1) {
+                components.push(
+                  <View key={`banner-${index}`} style={styles.bannerAdContainer}>
+                    <BannerAdComponent 
+                      style={styles.bannerAd}
+                      refreshInterval={50}
+                    />
+                  </View>
+                );
+              }
 
               return components;
             }).flat()
@@ -549,5 +557,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: 12,
     paddingHorizontal: 20,
+  },
+  bannerAd: {
+    width: '100%',
   },
 });

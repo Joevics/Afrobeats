@@ -16,6 +16,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Trophy, Home, RotateCcw, Share2, CircleCheck as CheckCircle, Circle as XCircle, Star, TrendingUp, ArrowLeft } from 'lucide-react-native';
 import { pickApiCategoryForSession } from '../services/categoryMap';
 import { getDeviceId } from '../services/deviceId';
+import BannerAdComponent from '../components/ads/BannerAdComponent';
 // AdMob temporarily disabled for web compatibility
 // import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 import Animated, {
@@ -377,6 +378,14 @@ Can you beat my score? Download AfroBeats Quiz! 🏆
             </View>
           </View>
 
+          {/* Banner Ad - Under Game Summary */}
+          <View style={styles.bannerAdContainer}>
+            <BannerAdComponent 
+              style={styles.bannerAd}
+              refreshInterval={35}
+            />
+          </View>
+
           {/* Question Breakdown */}
           <View style={styles.breakdownCard}>
             <Text style={styles.breakdownTitle}>Question Breakdown</Text>
@@ -684,12 +693,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 50,
   },
-  // Ad-related styles - Temporarily disabled
-  // bannerAdContainer: {
-  //   alignItems: 'center',
-  //   marginVertical: 12,
-  //   paddingHorizontal: 20,
-  // },
+  bannerAdContainer: {
+    alignItems: 'center',
+    marginVertical: 12,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  bannerAd: {
+    width: '100%',
+  },
 });
 
 const shareCardStyles = StyleSheet.create({

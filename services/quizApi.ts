@@ -69,7 +69,7 @@ if (__DEV__) {
 }
 
 // Only create Supabase client if credentials are provided
-let supabase = null;
+let supabase: any = null;
 try {
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -90,7 +90,7 @@ type GetQuestionsParams = {
 };
 
 export async function getQuestions(params: GetQuestionsParams & { deviceId?: string }) {
-  if (__DEV__) console.log('Getting audio questions from Supabase:', params);
+  if (__DEV__) console.log('Getting audio questions:', params);
 
   if (!supabase) {
     throw new Error('Supabase not configured');
@@ -101,98 +101,137 @@ export async function getQuestions(params: GetQuestionsParams & { deviceId?: str
     const audioCategory = pickAudioApiCategoryForSession(params.category);
     if (__DEV__) console.log(`Mapped category '${params.category}' to audio category '${audioCategory}'`);
 
-    let questions: any[] = [];
-    let error: any = null;
+    const cacheKey = getAudioCacheKey(params.category, params.type);
+    let allQuestions: any[] = [];
 
-    if (params.type === 'both') {
-      // For 'both' type, query both tables and combine results
-      const [songQuery, artistQuery] = await Promise.all([
-        supabase
-          .from('audio_questions')
-          .select('*')
-          .eq('category', audioCategory)
-          .order('created_at', { ascending: false })
-          .limit(params.limit || 10),
-        supabase
-          .from('artist_audio')
-          .select('*')
-          .eq('category', audioCategory)
-          .order('created_at', { ascending: false })
-          .limit(params.limit || 10)
-      ]);
-
-      if (songQuery.error) {
-        error = songQuery.error;
-      } else if (artistQuery.error) {
-        error = artistQuery.error;
-      } else {
-        // Combine results from both tables
-        questions = [...(songQuery.data || []), ...(artistQuery.data || [])];
-        // Shuffle and limit the combined results
-        questions = questions.sort(() => Math.random() - 0.5).slice(0, params.limit || 10);
+    // Try to load from cache first
+    try {
+      if (AsyncStorage) {
+        const stored = await AsyncStorage.getItem(cacheKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const data = Array.isArray(parsed?.data) ? parsed.data : [];
+          const ts = typeof parsed?.ts === 'number' ? parsed.ts : 0;
+          
+          if (data.length > 0 && !isAudioCacheExpired(ts)) {
+            if (__DEV__) console.log(`Loaded ${data.length} audio questions from cache for ${params.category}:${params.type}`);
+            allQuestions = data;
+          } else if (data.length > 0) {
+            if (__DEV__) console.log(`Audio cache expired, will refresh from Supabase`);
+          }
+        }
       }
-    } else {
-      // For single question types, use the appropriate table
-      let tableName: string;
-      if (params.type === 'artist') {
-        tableName = 'artist_audio';
-      } else {
-        tableName = 'audio_questions';
-      }
-
-      const { data, error: queryError } = await supabase
-        .from(tableName)
-        .select('*')
-        .eq('category', audioCategory)
-        .order('created_at', { ascending: false })
-        .limit(params.limit || 10);
-
-      questions = data || [];
-      error = queryError;
+    } catch (cacheError) {
+      if (__DEV__) console.log('Failed to load audio cache:', cacheError);
     }
 
-    if (error) {
-      throw error;
+    // If cache is empty or expired, fetch ALL questions from Supabase
+    if (allQuestions.length === 0) {
+      try {
+        const rawQuestions = await fetchAllQuestionsFromSupabase({
+          category: audioCategory,
+          type: params.type,
+          isLyrics: false
+        });
+
+        // Transform the data
+        allQuestions = rawQuestions.map(q => ({
+          id: q.id,
+          clip_id: q.clip_id,
+          audio_url: q.audio_url,
+          question_type: q.question_type,
+          correct_answer: q.correct_answer,
+          option_a: q.option_a,
+          option_b: q.option_b,
+          option_c: q.option_c,
+          option_d: q.option_d,
+          song_title: q.song_title,
+          artist_name: q.artist_name,
+          category: q.category,
+        }));
+
+        // Cache all questions
+        try {
+          if (AsyncStorage) {
+            const payload = { ts: Date.now(), data: allQuestions };
+            await AsyncStorage.setItem(cacheKey, JSON.stringify(payload));
+            if (__DEV__) console.log(`Cached ${allQuestions.length} audio questions for ${params.category}:${params.type}`);
+          }
+        } catch (cacheError) {
+          if (__DEV__) console.log('Failed to save audio cache:', cacheError);
+        }
+      } catch (error) {
+        if (__DEV__) console.error('Failed to fetch audio questions from Supabase:', error);
+        // Fall back to local data
+        if (__DEV__) console.log('Falling back to local audio questions...');
+        return getLocalAudioQuestions(params.category, params.type, params.limit || 10);
+      }
     }
 
-    if (!questions || questions.length === 0) {
+    if (allQuestions.length === 0) {
       if (__DEV__) console.log(`No audio questions found for category: ${params.category}`);
-      // Fallback to local data if Supabase has no questions
-      if (__DEV__) console.log('Falling back to local audio questions...');
-      return getLocalAudioQuestions(params);
+      return getLocalAudioQuestions(params.category, params.type, params.limit || 10);
     }
 
-    // Transform the data to match the expected AudioQuestion interface
-    const transformedQuestions = questions.map(q => ({
-      id: q.id,
-      clip_id: q.clip_id,
-      audio_url: q.audio_url,
-      question_type: q.question_type,
-      correct_answer: q.correct_answer,
-      option_a: q.option_a,
-      option_b: q.option_b,
-      option_c: q.option_c,
-      option_d: q.option_d,
-      song_title: q.song_title,
-      artist_name: q.artist_name,
-      category: q.category,
-    }));
+    // Ensure all questions have valid IDs (accept string or number)
+    const validQuestions = allQuestions.filter(q => q && q.id !== undefined && q.id !== null);
+    
+    if (validQuestions.length === 0) {
+      if (__DEV__) console.log(`No valid questions with IDs found for audio ${params.category}:${params.type}`);
+      return getLocalAudioQuestions(params.category, params.type, params.limit || 10);
+    }
+    
+    // Load used question IDs for this category/type combination
+    const usedIds = await getUsedQuestionIds(params.category, params.type, false);
+    
+    if (__DEV__) {
+      console.log(`Audio ${params.category}:${params.type} - Total questions: ${validQuestions.length}, Used: ${usedIds.size}`);
+    }
+    
+    // Filter out used questions by ID
+    let availableQuestions = validQuestions.filter(q => {
+      const id = String(q.id);
+      return !usedIds.has(id);
+    });
+    
+    // Only reset cycle if ALL questions have been used (check count, not just availability)
+    const allUsed = usedIds.size >= validQuestions.length;
+    
+    if (allUsed || availableQuestions.length === 0) {
+      if (__DEV__) console.log(`Cycle complete for audio ${params.category}:${params.type} (${usedIds.size}/${validQuestions.length} used), resetting...`);
+      await clearUsedQuestionIds(params.category, params.type, false);
+      availableQuestions = validQuestions;
+      usedIds.clear();
+    }
+    
+    // Shuffle available questions and take the requested limit (default 10)
+    const limit = params.limit || 10;
+    const shuffled = [...availableQuestions].sort(() => Math.random() - 0.5);
+    const selectedQuestions = shuffled.slice(0, limit);
+    
+    // Mark selected questions as used - ensure IDs are strings
+    const selectedIds = selectedQuestions.map(q => String(q.id)).filter(id => id && id.length > 0);
+    
+    if (selectedIds.length > 0) {
+      await saveUsedQuestionIds(params.category, params.type, false, selectedIds);
+    }
 
     if (__DEV__) {
-      console.log(`Loaded ${transformedQuestions.length} audio questions from Supabase for ${params.category}`);
-      transformedQuestions.forEach((item, index) => {
-        console.log(`Question ${index + 1}: ${item.id} - ${item.song_title} by ${item.artist_name}`);
-      });
+      console.log(`Selected ${selectedQuestions.length} questions from pool of ${availableQuestions.length} (${validQuestions.length} total, ${usedIds.size} already used) for audio ${params.category}:${params.type}`);
+      console.log(`Selected question IDs: ${selectedIds.join(', ')}`);
     }
 
-    return transformedQuestions;
+    return selectedQuestions;
   } catch (error) {
-    if (__DEV__) console.error('Failed to fetch audio questions from Supabase:', error);
-    throw error;
+    if (__DEV__) console.error('Failed to get audio questions:', error);
+    // Final fallback to local data
+    return getLocalAudioQuestions(params.category, params.type, params.limit || 10);
   }
 }
 
 export function markQuestionAsUsedInSession(questionId: string, isLyricsMode: boolean = false): void {
+  // This function is kept for backward compatibility
+  // Questions are now automatically marked as used when selected in getQuestions/getLyricsQuestions
   if (isLyricsMode) {
     markQuestionAsUsed(questionId);
   } else {
@@ -203,6 +242,11 @@ export function markQuestionAsUsedInSession(questionId: string, isLyricsMode: bo
 export function resetUsedQuestionsInSession(): void {
   resetUsedQuestions();
   resetUsedAudioQuestions();
+}
+
+// Manually reset the question cycle for a specific category/type/mode
+export async function resetQuestionCycle(category: string, type: 'song' | 'artist' | 'both', isLyricsMode: boolean): Promise<void> {
+  await clearUsedQuestionIds(category, type, isLyricsMode);
 }
 
 // ============================================================================
@@ -242,8 +286,8 @@ export async function getCategories() {
     if (audioError) throw audioError;
 
     // Combine and deduplicate categories
-    const allCategories = [...lyricsCategories, ...audioCategories];
-    const uniqueCategories = [...new Set(allCategories.map(item => item.category))];
+    const allCategories = [...(lyricsCategories || []), ...(audioCategories || [])];
+    const uniqueCategories = [...new Set(allCategories.map((item: any) => item.category))];
 
     return uniqueCategories.map(category => ({ id: category, name: category }));
   } catch (error) {
@@ -276,76 +320,345 @@ export async function getLyricsQuestions(params: {
   limit: number;
   deviceId?: string;
 }) {
-  if (__DEV__) console.log('Getting lyrics questions from Supabase:', params);
+  if (__DEV__) console.log('Getting lyrics questions:', params);
 
   if (!supabase) {
     throw new Error('Supabase not configured');
   }
 
   try {
-    let questions: any[] = [];
-    let error: any = null;
+    const cacheKey = getLyricsCacheKey(params.category, params.questionType);
+    let allQuestions: any[] = [];
 
-    if (params.questionType === 'both') {
-      // For 'both' type, query both tables and combine results
+    // Try to load from cache first
+    try {
+      if (AsyncStorage) {
+        const stored = await AsyncStorage.getItem(cacheKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const data = Array.isArray(parsed?.data) ? parsed.data : [];
+          const ts = typeof parsed?.ts === 'number' ? parsed.ts : 0;
+          
+          if (data.length > 0 && !isLyricsCacheExpired(ts)) {
+            if (__DEV__) console.log(`Loaded ${data.length} lyrics questions from cache for ${params.category}:${params.questionType}`);
+            allQuestions = data;
+          } else if (data.length > 0) {
+            if (__DEV__) console.log(`Lyrics cache expired, will refresh from Supabase`);
+          }
+        }
+      }
+    } catch (cacheError) {
+      if (__DEV__) console.log('Failed to load lyrics cache:', cacheError);
+    }
+
+    // Do NOT fetch during gameplay. If cache empty, fallback to local data.
+    if (allQuestions.length === 0) {
+      if (__DEV__) console.log(`Lyrics cache empty for ${params.category}:${params.questionType} - using local bundled data`);
+      return getLocalLyricsQuestions(params.category, params.questionType, params.limit || 10);
+    }
+
+    if (allQuestions.length === 0) {
+      if (__DEV__) console.log(`No lyrics questions found for category: ${params.category}`);
+      return getLocalLyricsQuestions(params.category, params.questionType, params.limit || 10);
+    }
+
+    // Ensure all questions have valid IDs (accept string or number)
+    const validQuestions = allQuestions.filter(q => q && q.id !== undefined && q.id !== null);
+    
+    if (validQuestions.length === 0) {
+      if (__DEV__) console.log(`No valid questions with IDs found for lyrics ${params.category}:${params.questionType}`);
+      return getLocalLyricsQuestions(params.category, params.questionType, params.limit || 10);
+    }
+    
+    // Load used question IDs for this category/type combination
+    const usedIds = await getUsedQuestionIds(params.category, params.questionType, true);
+    
+    if (__DEV__) {
+      console.log(`Lyrics ${params.category}:${params.questionType} - Total questions: ${validQuestions.length}, Used: ${usedIds.size}`);
+    }
+    
+    // Filter out used questions by ID
+    let availableQuestions = validQuestions.filter(q => {
+      const id = String(q.id);
+      return !usedIds.has(id);
+    });
+    
+    // Only reset cycle if ALL questions have been used (check count, not just availability)
+    const allUsed = usedIds.size >= validQuestions.length;
+    
+    if (allUsed || availableQuestions.length === 0) {
+      if (__DEV__) console.log(`Cycle complete for lyrics ${params.category}:${params.questionType} (${usedIds.size}/${validQuestions.length} used), resetting...`);
+      await clearUsedQuestionIds(params.category, params.questionType, true);
+      availableQuestions = validQuestions;
+      usedIds.clear();
+    }
+    
+    // Shuffle available questions and take the requested limit (default 10)
+    const limit = params.limit || 10;
+    const shuffled = [...availableQuestions].sort(() => Math.random() - 0.5);
+    const selectedQuestions = shuffled.slice(0, limit);
+    
+    // Mark selected questions as used - ensure IDs are strings
+    const selectedIds = selectedQuestions.map(q => String(q.id)).filter(id => id && id.length > 0);
+    
+    if (selectedIds.length > 0) {
+      await saveUsedQuestionIds(params.category, params.questionType, true, selectedIds);
+    }
+
+    if (__DEV__) {
+      console.log(`Selected ${selectedQuestions.length} questions from pool of ${availableQuestions.length} (${validQuestions.length} total, ${usedIds.size} already used) for lyrics ${params.category}:${params.questionType}`);
+      console.log(`Selected question IDs: ${selectedIds.join(', ')}`);
+    }
+
+    return selectedQuestions;
+  } catch (error) {
+    if (__DEV__) console.error('Failed to get lyrics questions:', error);
+    // Final fallback to local bundled data
+    return getLocalLyricsQuestions(params.category, params.questionType, params.limit || 10);
+  }
+}
+
+function getLyricsCacheKey(category: string, questionType: 'song' | 'artist' | 'both'): string {
+  return `lyricsCache:${category}:${questionType}`;
+}
+
+function getAudioCacheKey(category: string, questionType: 'song' | 'artist' | 'both'): string {
+  return `audioCache:${category}:${questionType}`;
+}
+
+function getUsedQuestionsKey(category: string, questionType: 'song' | 'artist' | 'both', isLyrics: boolean): string {
+  const mode = isLyrics ? 'lyrics' : 'audio';
+  return `usedQuestions:${mode}:${category}:${questionType}`;
+}
+
+// Load used question IDs from AsyncStorage
+async function getUsedQuestionIds(category: string, questionType: 'song' | 'artist' | 'both', isLyrics: boolean): Promise<Set<string>> {
+  try {
+    if (!AsyncStorage) {
+      if (__DEV__) console.log('AsyncStorage not available for loading used question IDs');
+      return new Set();
+    }
+    
+    const key = getUsedQuestionsKey(category, questionType, isLyrics);
+    if (__DEV__) console.log(`Loading used question IDs with key: ${key}`);
+    
+    const stored = await AsyncStorage.getItem(key);
+    
+    if (stored) {
+      if (__DEV__) console.log(`Found stored data for key ${key}, length: ${stored.length}`);
+      const ids = JSON.parse(stored);
+      if (Array.isArray(ids)) {
+        // Ensure all IDs are strings
+        const validIds = ids.map(id => String(id)).filter(id => id && id.length > 0);
+        const idSet = new Set(validIds);
+        if (__DEV__) {
+          console.log(`Loaded ${idSet.size} used question IDs for ${isLyrics ? 'lyrics' : 'audio'} ${category}:${questionType}`);
+          console.log(`Loaded IDs: ${Array.from(idSet).slice(0, 10).join(', ')}${idSet.size > 10 ? '...' : ''}`);
+        }
+        return idSet;
+      } else {
+        if (__DEV__) console.log(`Stored data for key ${key} is not an array:`, typeof ids);
+      }
+    } else {
+      if (__DEV__) console.log(`No stored data found for key: ${key}`);
+    }
+    
+    return new Set();
+  } catch (error) {
+    if (__DEV__) console.log('Failed to load used question IDs:', error);
+    return new Set();
+  }
+}
+
+// Save used question IDs to AsyncStorage
+async function saveUsedQuestionIds(category: string, questionType: 'song' | 'artist' | 'both', isLyrics: boolean, questionIds: string[]): Promise<void> {
+  try {
+    if (!AsyncStorage) {
+      if (__DEV__) console.log('AsyncStorage not available for saving used question IDs');
+      return;
+    }
+    
+    if (!questionIds || questionIds.length === 0) {
+      if (__DEV__) console.log('No question IDs to save');
+      return;
+    }
+    
+    const key = getUsedQuestionsKey(category, questionType, isLyrics);
+    if (__DEV__) console.log(`Saving used question IDs with key: ${key}`);
+    
+    const existing = await getUsedQuestionIds(category, questionType, isLyrics);
+    
+    // Ensure all IDs are strings and valid
+    const validIds = questionIds.map(id => String(id)).filter(id => id && id.length > 0);
+    
+    // Add new IDs to existing set
+    validIds.forEach(id => existing.add(id));
+    
+    // Convert Set to Array for storage
+    const idsArray = Array.from(existing);
+    const jsonString = JSON.stringify(idsArray);
+    await AsyncStorage.setItem(key, jsonString);
+    
+    // Verify the save worked
+    const verifyStored = await AsyncStorage.getItem(key);
+    if (verifyStored && verifyStored === jsonString) {
+      if (__DEV__) {
+        console.log(`✓ Saved ${validIds.length} new question IDs (total: ${idsArray.length}) for ${isLyrics ? 'lyrics' : 'audio'} ${category}:${questionType}`);
+        console.log(`New IDs: ${validIds.join(', ')}`);
+        console.log(`Save verified - stored ${verifyStored.length} bytes`);
+      }
+    } else {
+      if (__DEV__) {
+        console.log(`✗ Save verification failed for key: ${key}`);
+        console.log(`Expected: ${jsonString.length} bytes, Got: ${verifyStored ? verifyStored.length : 0} bytes`);
+      }
+    }
+  } catch (error) {
+    if (__DEV__) console.log('Failed to save used question IDs:', error);
+  }
+}
+
+// Clear used question IDs (when cycle completes)
+async function clearUsedQuestionIds(category: string, questionType: 'song' | 'artist' | 'both', isLyrics: boolean): Promise<void> {
+  try {
+    if (!AsyncStorage) return;
+    
+    const key = getUsedQuestionsKey(category, questionType, isLyrics);
+    await AsyncStorage.removeItem(key);
+    
+    if (__DEV__) console.log(`Cleared used question IDs for ${isLyrics ? 'lyrics' : 'audio'} ${category}:${questionType} (cycle complete)`);
+  } catch (error) {
+    if (__DEV__) console.log('Failed to clear used question IDs:', error);
+  }
+}
+
+// Cache TTL utilities - 7 days for better performance
+const QUESTIONS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const LYRICS_CACHE_TTL_MS = QUESTIONS_CACHE_TTL_MS;
+function isLyricsCacheExpired(ts: number): boolean {
+  if (!ts) return true;
+  return Date.now() - ts > LYRICS_CACHE_TTL_MS;
+}
+
+function isAudioCacheExpired(ts: number): boolean {
+  if (!ts) return true;
+  return Date.now() - ts > QUESTIONS_CACHE_TTL_MS;
+}
+
+// Fetch ALL questions from Supabase (for caching)
+async function fetchAllQuestionsFromSupabase(params: {
+  category: string;
+  type: 'song' | 'artist' | 'both';
+  isLyrics: boolean;
+}): Promise<any[]> {
+  if (!supabase) {
+    throw new Error('Supabase not configured');
+  }
+
+  const audioCategory = pickAudioApiCategoryForSession(params.category);
+  if (__DEV__) console.log(`Fetching ALL ${params.isLyrics ? 'lyrics' : 'audio'} questions for category: ${audioCategory}, type: ${params.type}`);
+
+  let questions: any[] = [];
+
+  if (params.isLyrics) {
+    // Lyrics tables: lyrics_questions, artist_lyrics
+    if (params.type === 'both') {
       const [songQuery, artistQuery] = await Promise.all([
         supabase
           .from('lyrics_questions')
           .select('*')
-          .eq('category', params.category)
-          .order('created_at', { ascending: false })
-          .limit(params.limit || 10),
+          .eq('category', params.category),
         supabase
           .from('artist_lyrics')
           .select('*')
           .eq('category', params.category)
-          .order('created_at', { ascending: false })
-          .limit(params.limit || 10)
       ]);
 
-      if (songQuery.error) {
-        error = songQuery.error;
-      } else if (artistQuery.error) {
-        error = artistQuery.error;
-      } else {
-        // Combine results from both tables
-        questions = [...(songQuery.data || []), ...(artistQuery.data || [])];
-        // Shuffle and limit the combined results
-        questions = questions.sort(() => Math.random() - 0.5).slice(0, params.limit || 10);
-      }
-    } else {
-      // For single question types, use the appropriate table
-      let tableName: string;
-      if (params.questionType === 'artist') {
-        tableName = 'artist_lyrics';
-      } else {
-        tableName = 'lyrics_questions';
-      }
+      if (songQuery.error) throw songQuery.error;
+      if (artistQuery.error) throw artistQuery.error;
 
-      const { data, error: queryError } = await supabase
+      questions = [...(songQuery.data || []), ...(artistQuery.data || [])];
+    } else {
+      const tableName = params.type === 'artist' ? 'artist_lyrics' : 'lyrics_questions';
+      const { data, error } = await supabase
         .from(tableName)
         .select('*')
-        .eq('category', params.category)
-        .order('created_at', { ascending: false })
-        .limit(params.limit || 10);
+        .eq('category', params.category);
 
+      if (error) throw error;
       questions = data || [];
-      error = queryError;
+    }
+  } else {
+    // Audio tables: audio_questions, artist_audio
+    if (params.type === 'both') {
+      const [songQuery, artistQuery] = await Promise.all([
+        supabase
+          .from('audio_questions')
+          .select('*')
+          .eq('category', audioCategory),
+        supabase
+          .from('artist_audio')
+          .select('*')
+          .eq('category', audioCategory)
+      ]);
+
+      if (songQuery.error) throw songQuery.error;
+      if (artistQuery.error) throw artistQuery.error;
+
+      questions = [...(songQuery.data || []), ...(artistQuery.data || [])];
+    } else {
+      const tableName = params.type === 'artist' ? 'artist_audio' : 'audio_questions';
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .eq('category', audioCategory);
+
+      if (error) throw error;
+      questions = data || [];
+    }
+  }
+
+  if (__DEV__) {
+    console.log(`Fetched ${questions.length} total ${params.isLyrics ? 'lyrics' : 'audio'} questions from Supabase`);
+  }
+
+  return questions;
+}
+
+// ===================================================================================
+// PREFETCH AND CACHE INITIALIZATION
+// Fetch all questions from Supabase on app launch and cache them for 7 days
+// ===================================================================================
+
+const UI_CATEGORIES = ['afrobeats', 'gospel', 'highlife', 'throwback', 'blues'];
+const QUESTION_TYPES: Array<'song' | 'artist' | 'both'> = ['song', 'artist', 'both'];
+
+async function ensureLyricsCache(category: string, type: 'song' | 'artist' | 'both'): Promise<void> {
+  try {
+    const cacheKey = getLyricsCacheKey(category, type);
+    let shouldFetch = true;
+    if (AsyncStorage) {
+      const stored = await AsyncStorage.getItem(cacheKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const ts = typeof parsed?.ts === 'number' ? parsed.ts : 0;
+        if (!isLyricsCacheExpired(ts)) {
+          shouldFetch = false;
+        }
+      }
     }
 
-    if (error) {
-      throw error;
-    }
+    if (!shouldFetch) return;
 
-    if (!questions || questions.length === 0) {
-      if (__DEV__) console.log(`No lyrics questions found for category: ${params.category}`);
-      // Fallback to local data if Supabase has no questions
-      if (__DEV__) console.log('Falling back to local lyrics questions...');
-      return getLocalLyricsQuestions(params);
-    }
+    if (!supabase) return; // Can't fetch now; will try next launch
 
-    // Transform the data to match the expected LyricsQuestion interface
-    const transformedQuestions = questions.map(q => {
+    const rawQuestions = await fetchAllQuestionsFromSupabase({
+      category,
+      type,
+      isLyrics: true
+    });
+
+    const allQuestions = rawQuestions.map(q => {
       const rawLyrics = (q as any).lyrics;
       let lyricsArray: string[] = [];
       if (Array.isArray(rawLyrics)) {
@@ -354,7 +667,6 @@ export async function getLyricsQuestions(params: {
         const single = rawLyrics.trim();
         if (single.length > 0) lyricsArray = [single];
       } else if (rawLyrics && typeof rawLyrics === 'object') {
-        // Some backends may return JSON string; try to parse safely
         try {
           const parsed = JSON.parse(String(rawLyrics));
           if (Array.isArray(parsed)) {
@@ -378,65 +690,83 @@ export async function getLyricsQuestions(params: {
       };
     });
 
-    if (__DEV__) {
-      console.log(`Loaded ${transformedQuestions.length} lyrics questions from Supabase for ${params.category}`);
-      transformedQuestions.forEach((item, index) => {
-        console.log(`Lyrics Question ${index + 1}: ${item.id} - ${item.song_title} by ${item.artist_name}`);
-        const lyricsText = Array.isArray(item.lyrics) ? item.lyrics.join(' ') : (typeof item.lyrics === 'string' ? item.lyrics : '');
-        console.log(`Lyrics: ${lyricsText ? lyricsText.substring(0, 100) : ''}...`);
-      });
+    if (AsyncStorage) {
+      const payload = { ts: Date.now(), data: allQuestions };
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(payload));
+      if (__DEV__) console.log(`Prefetched ${allQuestions.length} lyrics questions for ${category}:${type}`);
     }
-
-    // Persist to local cache for offline usage (with TTL enforcement)
-    try {
-      if (AsyncStorage) {
-        const cacheKey = getLyricsCacheKey(params.category, params.questionType);
-        const payload = { ts: Date.now(), data: transformedQuestions };
-        await AsyncStorage.setItem(cacheKey, JSON.stringify(payload));
-        if (__DEV__) console.log('Saved lyrics questions to cache:', cacheKey);
-      }
-    } catch (e) {
-      if (__DEV__) console.log('Failed to save lyrics cache:', e);
-    }
-
-    return transformedQuestions;
   } catch (error) {
-    if (__DEV__) console.error('Failed to fetch lyrics questions from Supabase:', error);
-
-    // Try to load from persistent cache before falling back
-    try {
-      if (AsyncStorage) {
-        const cacheKey = getLyricsCacheKey(params.category, params.questionType);
-        const stored = await AsyncStorage.getItem(cacheKey);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const data = Array.isArray(parsed?.data) ? parsed.data : [];
-          const ts = typeof parsed?.ts === 'number' ? parsed.ts : 0;
-          if (data.length > 0 && !isLyricsCacheExpired(ts)) {
-            if (__DEV__) console.log('Loaded lyrics questions from cache:', cacheKey, `(${data.length})`);
-            return data;
-          }
-        }
-      }
-    } catch (cacheError) {
-      if (__DEV__) console.log('Failed to load lyrics cache:', cacheError);
-    }
-
-    // Final fallback to local bundled data
-    if (__DEV__) console.log('Falling back to local lyrics questions...');
-    return getLocalLyricsQuestions(params);
+    if (__DEV__) console.log('ensureLyricsCache error:', error);
   }
 }
 
-function getLyricsCacheKey(category: string, questionType: 'song' | 'artist' | 'both'): string {
-  return `lyricsCache:${category}:${questionType}`;
+async function ensureAudioCache(category: string, type: 'song' | 'artist' | 'both'): Promise<void> {
+  try {
+    const cacheKey = getAudioCacheKey(category, type);
+    let shouldFetch = true;
+    if (AsyncStorage) {
+      const stored = await AsyncStorage.getItem(cacheKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const ts = typeof parsed?.ts === 'number' ? parsed.ts : 0;
+        if (!isAudioCacheExpired(ts)) {
+          shouldFetch = false;
+        }
+      }
+    }
+
+    if (!shouldFetch) return;
+
+    if (!supabase) return; // Can't fetch now; will try next launch
+
+    const rawQuestions = await fetchAllQuestionsFromSupabase({
+      category,
+      type,
+      isLyrics: false
+    });
+
+    const allQuestions = rawQuestions.map(q => ({
+      id: q.id,
+      clip_id: q.clip_id,
+      audio_url: q.audio_url,
+      question_type: q.question_type,
+      correct_answer: q.correct_answer,
+      option_a: q.option_a,
+      option_b: q.option_b,
+      option_c: q.option_c,
+      option_d: q.option_d,
+      song_title: q.song_title,
+      artist_name: q.artist_name,
+      category: q.category,
+    }));
+
+    if (AsyncStorage) {
+      const payload = { ts: Date.now(), data: allQuestions };
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(payload));
+      if (__DEV__) console.log(`Prefetched ${allQuestions.length} audio questions for ${category}:${type}`);
+    }
+  } catch (error) {
+    if (__DEV__) console.log('ensureAudioCache error:', error);
+  }
 }
 
-// Cache TTL utilities
-const LYRICS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-function isLyricsCacheExpired(ts: number): boolean {
-  if (!ts) return true;
-  return Date.now() - ts > LYRICS_CACHE_TTL_MS;
+export async function initializeQuestionCaches(): Promise<void> {
+  try {
+    // Prefetch lyrics first (offline gameplay)
+    for (const category of UI_CATEGORIES) {
+      for (const type of QUESTION_TYPES) {
+        await ensureLyricsCache(category, type);
+      }
+    }
+    // Prefetch audio metadata (audio requires internet during play, but cache helps)
+    for (const category of UI_CATEGORIES) {
+      for (const type of QUESTION_TYPES) {
+        await ensureAudioCache(category, type);
+      }
+    }
+  } catch (error) {
+    if (__DEV__) console.log('initializeQuestionCaches error:', error);
+  }
 }
 
 // ============================================================================
@@ -718,7 +1048,7 @@ async function syncScoreToSupabase(category: string, newScore: number) {
         updateData.username = username;
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('leaderboard_data')
         .update(updateData)
         .eq('device_id', deviceId);
@@ -899,7 +1229,7 @@ export async function getOverallLeaderboard(limit = 50): Promise<LeaderboardEntr
 
     // Sort by total score descending and take top limit
     const sortedLeaderboard = leaderboard
-      .sort((a, b) => b.total_score - a.total_score)
+      .sort((a: LeaderboardEntry, b: LeaderboardEntry) => (b.total_score || 0) - (a.total_score || 0))
       .slice(0, limit);
 
     if (__DEV__) console.log('Overall leaderboard from Supabase:', sortedLeaderboard);
@@ -951,16 +1281,16 @@ export async function getMyOverallRank(): Promise<{ rank: number; score: number 
     });
 
     // Sort by total score descending
-    const sortedUsers = userTotals.sort((a, b) => b.total_score - a.total_score);
+    const sortedUsers = userTotals.sort((a: { device_id: string; total_score: number }, b: { device_id: string; total_score: number }) => b.total_score - a.total_score);
 
     // Find current user
-    const currentUser = sortedUsers.find(user => user.device_id === deviceId);
+    const currentUser = sortedUsers.find((user: { device_id: string; total_score: number }) => user.device_id === deviceId);
     if (!currentUser) {
       return null;
     }
 
     // Find user's rank
-    const userRank = sortedUsers.findIndex(user => user.device_id === deviceId) + 1;
+    const userRank = sortedUsers.findIndex((user: { device_id: string; total_score: number }) => user.device_id === deviceId) + 1;
 
     if (__DEV__) console.log('User overall rank calculated:', { rank: userRank, score: currentUser.total_score });
 
@@ -1020,7 +1350,7 @@ export async function updateUsernameInSupabase(username: string) {
 
     if (existingRecord) {
       // Update existing record
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('leaderboard_data')
         .update({ username, updated_at: new Date().toISOString() })
         .eq('device_id', deviceId);
@@ -1029,7 +1359,7 @@ export async function updateUsernameInSupabase(username: string) {
       if (__DEV__) console.log('Username updated in Supabase for existing user');
     } else {
       // Create new record with just username
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('leaderboard_data')
         .insert({ device_id: deviceId, username });
 
