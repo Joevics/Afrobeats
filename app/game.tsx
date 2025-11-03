@@ -33,6 +33,7 @@ import { getDeviceId } from '../services/deviceId';
 import { useAudioCache } from '../hooks/useAudioCache';
 import BannerAdComponent from '../components/ads/BannerAdComponent';
 import ReportSongModal from './components/ReportSongModal';
+import { openEmail } from '../utils/email';
 // AdMob temporarily disabled for web compatibility
 // import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
@@ -1057,8 +1058,9 @@ export default function GameScreen() {
         <ReportSongModal
           visible={showReportModal}
           onClose={() => setShowReportModal(false)}
-          phone={'+2347056928186'}
+          email={'joevics.apps@gmail.com'}
           title={'Report or Suggest Changes'}
+          subject={'Song/Audio Issue Report'}
           defaultMessage={`Report: The song/audio didn't play.\nCategory: ${String(params.category)}\nMode: ${String(params.quizMode)}\nID: ${currentQ?.id || ''}\nSong: ${currentQ?.songTitle || ''}\nArtist: ${currentQ?.artistName || ''}`}
         />
         {/* Header */}
@@ -1346,6 +1348,15 @@ export default function GameScreen() {
                   {'\n\n'}
                   All trademarks, service marks, and trade names are the property of their respective owners.
                 </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowDisclaimerModal(false);
+                    openEmail('joevics.apps@gmail.com', 'Question about AfroBeats Quiz App', 'Hello, I have a question about the app.');
+                  }}
+                  style={{ marginTop: 16 }}
+                >
+                  <Text style={styles.contactUsText}>Contact Us</Text>
+                </TouchableOpacity>
               </ScrollView>
               <TouchableOpacity
                 style={styles.modalCloseButton}
@@ -1713,6 +1724,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
+  },
+  contactUsText: {
+    color: '#8B5CF6',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+    textAlign: 'center',
   },
   lyricsContainer: {
     backgroundColor: '#374151',

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { openEmail } from '../utils/email';
 
 type Props = {
   children: React.ReactNode;
@@ -31,18 +32,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
     this.setState({ hasError: false, errorMessage: undefined });
   };
 
-  handleReport = () => {
-    const phoneNumber = '+2348092998662';
-    const message = encodeURIComponent('I encountered an error in AfroBeats Quiz app. Please help.');
-    const whatsappUrl = `https://wa.me/${phoneNumber.replace(/[^0-9]/g, '')}?text=${message}`;
-    
-    Linking.openURL(whatsappUrl).catch(() => {
-      // Fallback if WhatsApp is not installed
-      const smsUrl = `sms:${phoneNumber}?body=${message}`;
-      Linking.openURL(smsUrl).catch(() => {
-        if (__DEV__) console.log('Could not open WhatsApp or SMS');
-      });
-    });
+  handleReport = async () => {
+    await openEmail('joevics.apps@gmail.com', 'Error Report - AfroBeats Quiz App', 'I encountered an error in AfroBeats Quiz app. Please help.');
   };
 
   render() {

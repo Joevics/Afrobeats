@@ -173,7 +173,7 @@ export default function LeaderboardScreen() {
       }
 
     } catch (error) {
-      console.error('Error loading all leaderboard data:', error);
+      if (__DEV__) console.error('Error loading all leaderboard data:', error);
       // silent on total error, empty data already set below
       Alert.alert('Connection Required', 'Internet connection required to fetch leaderboard. Check your connection.');
       // Set empty data on error
@@ -389,8 +389,9 @@ export default function LeaderboardScreen() {
         <ReportSongModal
           visible={showContactModal}
           onClose={() => setShowContactModal(false)}
-          phone={'+2347056928186'}
-          title={'Contact via WhatsApp'}
+          email={'joevics.apps@gmail.com'}
+          title={'Contact via Email'}
+          subject={'Leaderboard Feedback/Suggestion'}
           defaultMessage={'Hello, I have feedback/suggestions about the leaderboard.'}
         />
         {/* Static Header */}
@@ -409,7 +410,7 @@ export default function LeaderboardScreen() {
             onPress={() => setShowContactModal(true)}
             style={{ marginTop: 8, color: '#8B5CF6', fontWeight: '700', textDecorationLine: 'underline' }}
           >
-            Report/Suggest via WhatsApp
+            Report/Suggest via Email
           </Text>
         </View>
 

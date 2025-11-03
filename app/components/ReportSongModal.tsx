@@ -1,36 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, TextInput, Linking, Alert } from 'react-native';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import { openEmail } from '../../utils/email';
 
 interface ReportSongModalProps {
   visible: boolean;
   onClose: () => void;
-  phone: string; // E.164 format e.g. +2347056928186
+  email: string; // Email address e.g. joevics.apps@gmail.com
   title?: string;
   defaultMessage?: string;
+  subject?: string;
 }
 
-export default function ReportSongModal({ visible, onClose, phone, title = 'Report or Suggest Changes', defaultMessage = '' }: ReportSongModalProps) {
+export default function ReportSongModal({ visible, onClose, email, title = 'Report or Suggest Changes', defaultMessage = '', subject = 'Report or Suggestion' }: ReportSongModalProps) {
   const [message, setMessage] = useState(defaultMessage);
 
   useEffect(() => {
     setMessage(defaultMessage || '');
   }, [defaultMessage, visible]);
 
-  const openWhatsApp = async () => {
-    try {
-      const encoded = encodeURIComponent(message || '');
-      const phoneDigits = phone.replace(/[^\d+]/g, '');
-      const appUrl = `whatsapp://send?phone=${phoneDigits}&text=${encoded}`;
-      const canOpen = await Linking.canOpenURL(appUrl);
-      if (canOpen) {
-        await Linking.openURL(appUrl);
-        onClose();
-      } else {
-        Alert.alert('WhatsApp not installed', 'Please install WhatsApp to send this report.');
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Unable to open WhatsApp.');
-    }
+  const handleSendEmail = async () => {
+    await openEmail(email, subject, message);
+    onClose();
   };
 
   return (
@@ -53,8 +43,8 @@ export default function ReportSongModal({ visible, onClose, phone, title = 'Repo
             <TouchableOpacity onPress={onClose} style={[styles.button, styles.cancelButton]}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={openWhatsApp} style={[styles.button, styles.sendButton]}>
-              <Text style={styles.sendText}>Send via WhatsApp</Text>
+            <TouchableOpacity onPress={handleSendEmail} style={[styles.button, styles.sendButton]}>
+              <Text style={styles.sendText}>Send via Email</Text>
             </TouchableOpacity>
           </View>
         </View>

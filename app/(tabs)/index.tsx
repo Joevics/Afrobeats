@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { initializeQuestionCaches } from '../../services/quizApi';
+import { openEmail } from '../../utils/email';
 import {
   Play,
   Zap,
@@ -292,6 +293,8 @@ export default function HomeScreen() {
   // Question count is fixed at 10
   const [speedMode, setSpeedMode] = useState(false);
   const [selectedQuizMode, setSelectedQuizMode] = useState('audio');
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
 
   // Animation values
   const musicIconFloat = useSharedValue(0);
@@ -457,10 +460,52 @@ export default function HomeScreen() {
 
         {/* Disclaimer - Below start button */}
         <Animated.View entering={FadeInUp.delay(800)} style={styles.disclaimerContainer}>
-          <Text style={styles.disclaimerText}>
-          Disclaimer: All Music belongs to respective owners. Short previews are solely for educational purposes only.
-          </Text>
+          <Pressable onPress={() => setShowDisclaimerModal(true)}>
+            <Text style={styles.disclaimerText}>
+            Disclaimer: All Music belongs to respective owners. Short previews are solely for educational purposes only.
+            </Text>
+          </Pressable>
         </Animated.View>
+
+        {/* Disclaimer Modal */}
+        <Modal
+          visible={showDisclaimerModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowDisclaimerModal(false)}
+        >
+          <View style={styles.disclaimerModalOverlay}>
+            <View style={styles.disclaimerModalContent}>
+              <Text style={styles.disclaimerModalTitle}>Disclaimer</Text>
+              <ScrollView style={styles.disclaimerModalScrollView}>
+                <Text style={styles.disclaimerModalText}>
+                  All music belongs to their respective owners. This application uses short audio clips and song lyrics solely for educational and entertainment purposes.
+                  {'\n\n'}
+                  The content provided in this quiz is intended to test users' knowledge of music and does not claim ownership of any musical works, lyrics, or compositions.
+                  {'\n\n'}
+                  If you are the owner of any content used in this application and wish to have it removed, please contact us through the in-app reporting feature.
+                  {'\n\n'}
+                  All trademarks, service marks, and trade names are the property of their respective owners.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowDisclaimerModal(false);
+                    openEmail('joevics.apps@gmail.com', 'Question about AfroBeats Quiz App', 'Hello, I have a question about the app.');
+                  }}
+                  style={{ marginTop: 16 }}
+                >
+                  <Text style={styles.contactUsText}>Contact Us</Text>
+                </TouchableOpacity>
+              </ScrollView>
+              <TouchableOpacity
+                style={styles.disclaimerModalCloseButton}
+                onPress={() => setShowDisclaimerModal(false)}
+              >
+                <Text style={styles.disclaimerModalCloseButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -923,5 +968,58 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
+  },
+  // Disclaimer Modal Styles
+  disclaimerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  disclaimerModalContent: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  disclaimerModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontFamily: 'Inter-Bold',
+    marginBottom: 16,
+  },
+  disclaimerModalScrollView: {
+    maxHeight: 300,
+    marginBottom: 16,
+  },
+  disclaimerModalText: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    fontFamily: 'Inter-Regular',
+    lineHeight: 22,
+    textAlign: 'left',
+  },
+  disclaimerModalCloseButton: {
+    backgroundColor: '#8B5CF6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  disclaimerModalCloseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+  },
+  contactUsText: {
+    color: '#8B5CF6',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+    textAlign: 'center',
   },
 });
