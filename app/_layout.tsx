@@ -13,6 +13,7 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import CustomSplashScreen from '../components/CustomSplashScreen';
+import { initializeAdMob } from '../services/adManager';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -40,8 +41,13 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  // AdMob removed for production readiness
-  // Will be added back when needed for mobile builds
+  // Initialize AdMob on app startup
+  useEffect(() => {
+    initializeAdMob().catch((error) => {
+      if (__DEV__) console.error('Failed to initialize AdMob:', error);
+      // Don't block app startup if AdMob fails
+    });
+  }, []);
 
   // Show custom splash screen while loading
   if (showCustomSplash || (!fontsLoaded && !fontError)) {

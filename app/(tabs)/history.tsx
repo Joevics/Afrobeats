@@ -16,6 +16,7 @@ import {
   Music,
   Star,
   TrendingUp,
+  PlayCircle,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BannerAdComponent from '../../components/ads/BannerAdComponent';
@@ -255,6 +256,9 @@ const formatDate = (dateString: string) => {
               const correctAnswers = game.answers ? game.answers.filter((a: any) => a.isCorrect).length : 0;
               const accuracy = game.accuracy || Math.round((correctAnswers / game.totalQuestions) * 100);
               const datePlayed = game.datePlayed || game.date;
+              const isPaused = game.status === 'paused' || game.status === 'exited';
+              const progress = game.currentQuestion !== undefined ? game.currentQuestion + 1 : correctAnswers;
+              const totalQuestions = game.totalQuestions || 10;
 
               // Create array of components with banner ads every 5 items
               const components = [];
@@ -263,27 +267,63 @@ const formatDate = (dateString: string) => {
               components.push(
                 <TouchableOpacity
                   key={game.id}
-                  style={styles.gameCard}
-                  onPress={() => router.push({
-                    pathname: '/history-detail',
-                    params: { historyId: game.id }
-                  })}
+                  style={[
+                    styles.gameCard,
+                    isPaused && styles.pausedGameCard
+                  ]}
+                  onPress={() => {
+                    if (isPaused) {
+                      // Resume paused game
+                      router.push({
+                        pathname: '/game',
+                        params: {
+                          resumeGameId: game.id,
+                          category: game.category,
+                          gameplay: game.gameplay,
+                          difficulty: game.difficulty,
+                          speedMode: game.speedMode || 'false',
+                          quizMode: game.quizMode || 'audio',
+                          count: String(totalQuestions),
+                        }
+                      });
+                    } else {
+                      // View completed game details
+                      router.push({
+                        pathname: '/history-detail',
+                        params: { historyId: game.id }
+                      });
+                    }
+                  }}
                 >
                   <View style={styles.gameHeader}>
                     <View style={styles.gameInfo}>
                       <Text style={styles.categoryIcon}>{getCategoryIcon(game.category)}</Text>
                       <View style={styles.gameDetails}>
-                        <Text style={styles.categoryName}>{game.category}</Text>
+                        <View style={styles.categoryRow}>
+                          <Text style={styles.categoryName}>{game.category}</Text>
+                          {isPaused && (
+                            <View style={styles.pausedBadge}>
+                              <PlayCircle size={12} color="#8B5CF6" />
+                              <Text style={styles.pausedBadgeText}>
+                                {game.status === 'paused' ? 'Paused' : 'Exited'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.gameplayMode}>
                           {game.gameplay} • {game.quizMode === 'lyrics' ? '📝 Lyrics' : '🎵 Audio'}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.gameRank}>
-                      <Text style={[styles.rankText, { color: getDifficultyColor(game.difficulty) }]}>
-                        #{index + 1}
+                      {!isPaused && (
+                        <Text style={[styles.rankText, { color: getDifficultyColor(game.difficulty) }]}>
+                          #{index + 1}
+                        </Text>
+                      )}
+                      <Text style={styles.scoreText}>
+                        {isPaused ? `Q: ${progress}/${totalQuestions}` : `${game.score || 0} pts`}
                       </Text>
-                      <Text style={styles.scoreText}>{game.score || 0} pts</Text>
                     </View>
                   </View>
 
@@ -292,12 +332,14 @@ const formatDate = (dateString: string) => {
                       <Calendar size={16} color="#9CA3AF" />
                       <Text style={styles.gameStatText}>{formatDate(datePlayed)}</Text>
                     </View>
-                    <View style={styles.gameStatItem}>
-                      <Music size={16} color="#9CA3AF" />
-                      <Text style={styles.gameStatText}>
-                        {correctAnswers}/{game.totalQuestions}
-                      </Text>
-                    </View>
+                    {!isPaused && (
+                      <View style={styles.gameStatItem}>
+                        <Music size={16} color="#9CA3AF" />
+                        <Text style={styles.gameStatText}>
+                          {correctAnswers}/{game.totalQuestions}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.gameStatItem}>
                       <Clock size={16} color="#9CA3AF" />
                       <Text style={styles.gameStatText}>{game.difficulty}</Text>
@@ -309,24 +351,37 @@ const formatDate = (dateString: string) => {
                     </View>
                   </View>
 
-                  {/* Accuracy Bar */}
-                  <View style={styles.accuracyContainer}>
-                    <Text style={styles.accuracyLabel}>Accuracy</Text>
-                    <View style={styles.accuracyBar}>
-                      <View
-                        style={[
-                          styles.accuracyFill,
-                          {
-                            width: `${accuracy}%`,
-                            backgroundColor: getDifficultyColor(game.difficulty),
-                          },
-                        ]}
-                      />
+                  {isPaused ? (
+                    /* Continue Button for Paused Games */
+                    <View style={styles.continueContainer}>
+                      <View style={styles.continueButton}>
+                        <PlayCircle size={20} color="#8B5CF6" />
+                        <Text style={styles.continueButtonText}>Tap to Continue</Text>
+                      </View>
+                      <Text style={styles.continueSubtext}>
+                        Progress: {progress}/{totalQuestions} questions
+                      </Text>
                     </View>
-                    <Text style={styles.accuracyPercentage}>
-                      {accuracy}%
-                    </Text>
-                  </View>
+                  ) : (
+                    /* Accuracy Bar for Completed Games */
+                    <View style={styles.accuracyContainer}>
+                      <Text style={styles.accuracyLabel}>Accuracy</Text>
+                      <View style={styles.accuracyBar}>
+                        <View
+                          style={[
+                            styles.accuracyFill,
+                            {
+                              width: `${accuracy}%`,
+                              backgroundColor: getDifficultyColor(game.difficulty),
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.accuracyPercentage}>
+                        {accuracy}%
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
 
@@ -560,5 +615,60 @@ const styles = StyleSheet.create({
   },
   bannerAd: {
     width: '100%',
+  },
+  pausedGameCard: {
+    borderColor: '#8B5CF6',
+    borderWidth: 2,
+    backgroundColor: '#8B5CF620',
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  pausedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#8B5CF620',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#8B5CF6',
+  },
+  pausedBadgeText: {
+    fontSize: 10,
+    color: '#8B5CF6',
+    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
+  },
+  continueContainer: {
+    marginTop: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  continueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  continueButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+  },
+  continueSubtext: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
   },
 });

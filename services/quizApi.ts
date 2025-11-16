@@ -89,6 +89,22 @@ type GetQuestionsParams = {
   limit?: number;
 };
 
+/**
+ * Get audio questions for the quiz game.
+ * 
+ * Caching Strategy:
+ * - Questions are cached in AsyncStorage with a TTL (time-to-live)
+ * - Cache key format: `audioCache:{category}:{type}`
+ * - Cache persists across app restarts until expiration
+ * - When cache expires or is empty, questions are fetched from Supabase
+ * - Selected questions are marked as "used" to avoid repetition
+ * - Audio files themselves are cached separately in memory via useAudioCache hook
+ * 
+ * This ensures:
+ * 1. Questions are fetched once at game start and cached
+ * 2. Audio URLs are available immediately for pre-loading
+ * 3. Cache persists for the game session duration
+ */
 export async function getQuestions(params: GetQuestionsParams & { deviceId?: string }) {
   if (__DEV__) console.log('Getting audio questions:', params);
 
@@ -104,7 +120,7 @@ export async function getQuestions(params: GetQuestionsParams & { deviceId?: str
     const cacheKey = getAudioCacheKey(params.category, params.type);
     let allQuestions: any[] = [];
 
-    // Try to load from cache first
+    // Try to load from AsyncStorage cache first (persists across app restarts)
     try {
       if (AsyncStorage) {
         const stored = await AsyncStorage.getItem(cacheKey);
@@ -314,6 +330,21 @@ export async function submitScore(body: any) {
 // Lyrics Quiz API Functions
 // Fetches lyrics questions from Supabase instead of local data
 
+/**
+ * Get lyrics questions for the quiz game.
+ * 
+ * Caching Strategy:
+ * - Questions (including lyrics text) are cached in AsyncStorage with a TTL
+ * - Cache key format: `lyricsCache:{category}:{questionType}`
+ * - Cache persists across app restarts until expiration
+ * - Lyrics text is included in the question objects and cached in memory during gameplay
+ * - When cache is empty, falls back to local bundled data (no network fetch during gameplay)
+ * 
+ * This ensures:
+ * 1. Lyrics questions are fetched once at game start and cached
+ * 2. Lyrics text is available immediately (no network needed during gameplay)
+ * 3. Cache persists for the game session duration
+ */
 export async function getLyricsQuestions(params: {
   category: string;
   questionType: 'song' | 'artist' | 'both';
@@ -330,7 +361,8 @@ export async function getLyricsQuestions(params: {
     const cacheKey = getLyricsCacheKey(params.category, params.questionType);
     let allQuestions: any[] = [];
 
-    // Try to load from cache first
+    // Try to load from AsyncStorage cache first (persists across app restarts)
+    // Lyrics text is included in the cached question objects
     try {
       if (AsyncStorage) {
         const stored = await AsyncStorage.getItem(cacheKey);
@@ -352,6 +384,7 @@ export async function getLyricsQuestions(params: {
     }
 
     // Do NOT fetch during gameplay. If cache empty, fallback to local data.
+    // This ensures lyrics are always available offline once cached
     if (allQuestions.length === 0) {
       if (__DEV__) console.log(`Lyrics cache empty for ${params.category}:${params.questionType} - using local bundled data`);
       return getLocalLyricsQuestions(params.category, params.questionType, params.limit || 10);

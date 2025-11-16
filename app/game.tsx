@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-import { Play, Pause, SkipForward, SkipBack, Home, Volume2, CircleCheck as CheckCircle, Circle as XCircle, Plus } from 'lucide-react-native';
+import { Play, Pause, SkipForward, SkipBack, Home, Volume2, CircleCheck as CheckCircle, Circle as XCircle, Plus, PauseCircle, X } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -90,6 +90,7 @@ export default function GameScreen() {
     speedMode: string;
     count?: string;
     quizMode: string;
+    resumeGameId?: string; // ID of paused game to resume
   };
 
   // Clean up corrupted leaderboard data on component mount
@@ -111,8 +112,11 @@ export default function GameScreen() {
   const [calculatingScore, setCalculatingScore] = useState(false);
   const [lastPointsEarned, setLastPointsEarned] = useState(0);
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+  const [showPauseModal, setShowPauseModal] = useState(false);
+  const [resumeGameId, setResumeGameId] = useState<string | null>(null); // Track if resuming a game
   const soundRef = useRef<Audio.Sound | null>(null);
   const stopTimeoutRef = useRef<number | null>(null);
+  const questionTimeoutRef = useRef<number | null>(null); // 1-minute auto-advance timeout
   
   const isFocused = useIsFocused();
   
@@ -138,11 +142,134 @@ export default function GameScreen() {
     return isHardMode ? 30 : 60; // Challenge 30s, Normal 60s
   };
 
+  // Save paused game state to AsyncStorage
+  const savePausedGame = async (action: 'pause' | 'exit') => {
+    try {
+      if (questions.length === 0) return;
+
+      // Generate ID if this is a new game, otherwise use existing resumeGameId
+      const gameId = resumeGameId || Date.now().toString();
+      if (!resumeGameId) {
+        setResumeGameId(gameId); // Set it so future pauses use the same ID
+      }
+
+      const pausedGame = {
+        id: gameId,
+        status: action === 'pause' ? 'paused' : 'exited',
+        category: params.category,
+        difficulty: params.difficulty,
+        gameplay: params.gameplay,
+        quizMode: params.quizMode,
+        speedMode: params.speedMode,
+        currentQuestion,
+        score,
+        gameAnswers,
+        questions,
+        timeLeft: isSpeedMode ? timeLeft : 0,
+        datePaused: new Date().toISOString(),
+      };
+
+      // Get existing paused games
+      const existing = await AsyncStorage.getItem('pausedGames');
+      let pausedGames: any[] = [];
+      try {
+        pausedGames = existing ? JSON.parse(existing) : [];
+        if (!Array.isArray(pausedGames)) pausedGames = [];
+      } catch (e) {
+        pausedGames = [];
+      }
+
+      // Remove this game if it already exists (update it)
+      pausedGames = pausedGames.filter((g: any) => g.id !== pausedGame.id);
+      // Add to beginning
+      pausedGames.unshift(pausedGame);
+      // Keep max 20 paused games
+      if (pausedGames.length > 20) pausedGames = pausedGames.slice(0, 20);
+
+      await AsyncStorage.setItem('pausedGames', JSON.stringify(pausedGames));
+
+      // Also save to history with paused status
+      const historyEntry = {
+        ...pausedGame,
+        totalQuestions: questions.length,
+        accuracy: 0, // Will be calculated when completed
+        datePlayed: pausedGame.datePaused,
+      };
+
+      const history = await AsyncStorage.getItem('gameHistory');
+      let historyList: any[] = [];
+      try {
+        historyList = history ? JSON.parse(history) : [];
+        if (!Array.isArray(historyList)) historyList = [];
+      } catch (e) {
+        historyList = [];
+      }
+
+      // Remove if already exists
+      historyList = historyList.filter((h: any) => h.id !== historyEntry.id);
+      historyList.unshift(historyEntry);
+      if (historyList.length > 50) historyList = historyList.slice(0, 50);
+
+      await AsyncStorage.setItem('gameHistory', JSON.stringify(historyList));
+
+      if (__DEV__) console.log('Game paused/exited:', pausedGame.id);
+    } catch (error) {
+      if (__DEV__) console.log('Error saving paused game:', error);
+    }
+  };
+
+  // Load paused game state
+  const loadPausedGame = async (gameId: string) => {
+    try {
+      const pausedGames = await AsyncStorage.getItem('pausedGames');
+      if (!pausedGames) return null;
+
+      const games = JSON.parse(pausedGames);
+      const game = games.find((g: any) => g.id === gameId);
+      return game || null;
+    } catch (error) {
+      if (__DEV__) console.log('Error loading paused game:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const bootstrap = async (retryCount = 0) => {
       const maxRetries = 2;
 
       try {
+        // Check if resuming a paused game
+        if (params.resumeGameId) {
+          const pausedGame = await loadPausedGame(params.resumeGameId);
+          if (pausedGame) {
+            if (__DEV__) console.log('Resuming paused game:', pausedGame.id);
+            setResumeGameId(pausedGame.id);
+            setQuestions(pausedGame.questions);
+            setCurrentQuestion(pausedGame.currentQuestion);
+            setScore(pausedGame.score);
+            setGameAnswers(pausedGame.gameAnswers || []);
+            setTimeLeft(pausedGame.timeLeft || 0);
+            setLoading(false);
+
+            // Re-initialize audio cache for audio mode
+            if (!pausedGame.quizMode || pausedGame.quizMode !== 'lyrics') {
+              const audioUrls: string[] = [];
+              pausedGame.questions.forEach((q: GameQuestion) => {
+                if (q.audioUrl) {
+                  audioUrls.push(q.audioUrl);
+                }
+              });
+              if (audioUrls.length > 0) {
+                if (__DEV__) console.log(`Re-initializing audio cache for ${audioUrls.length} audio files`);
+                initializeCache(audioUrls);
+              }
+            }
+            return;
+          } else {
+            if (__DEV__) console.log('Paused game not found, starting new game');
+          }
+        }
+
         const limit = params.count ? Math.min(parseInt(String(params.count), 10) || 10, 20) : 10; // Cap at 20
         const type = params.gameplay === 'artist' ? 'artist' : params.gameplay === 'both' ? 'both' : 'song';
         const apiCategory = pickApiCategoryForSession(String(params.category));
@@ -226,10 +353,17 @@ export default function GameScreen() {
         }
 
         if (__DEV__) console.log(`Loaded ${mapped.length} valid questions`);
+        
+        // Store questions in state - these are cached in memory for the game session
+        // Questions are already fetched and cached:
+        // - Lyrics: Cached in AsyncStorage via getLyricsQuestions (persists until cache expires)
+        // - Audio: Questions cached in AsyncStorage, audio URLs will be cached in memory
         setQuestions(mapped);
         setCurrentQuestion(0);
 
-        // Simple cache initialization - fetch all audio URLs
+        // Audio cache initialization - pre-fetch all audio URLs for the game
+        // This ensures all audio is downloaded and cached in memory before gameplay starts
+        // Audio cache persists for the game session (until clearCache() is called or app restarts)
         if (!isLyricsMode) {
           const audioUrls: string[] = [];
           mapped.forEach(q => {
@@ -238,8 +372,15 @@ export default function GameScreen() {
             }
           });
           if (audioUrls.length > 0) {
+            if (__DEV__) console.log(`Initializing audio cache for ${audioUrls.length} audio files`);
+            // Start background caching - this will download all audio files
+            // Cache persists in memory for the duration of the game session
             initializeCache(audioUrls);
           }
+        } else {
+          // Lyrics mode: Questions are already cached in AsyncStorage
+          // Lyrics text is included in the question objects and cached in memory via state
+          if (__DEV__) console.log(`Lyrics mode: ${mapped.length} questions loaded and cached in memory`);
         }
 
       } catch (e) {
@@ -272,6 +413,10 @@ export default function GameScreen() {
       if (stopTimeoutRef.current) {
         clearTimeout(stopTimeoutRef.current);
         stopTimeoutRef.current = null;
+      }
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+        questionTimeoutRef.current = null;
       }
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch((e) => {
@@ -313,13 +458,45 @@ export default function GameScreen() {
     if (existingAnswer) {
       setSelectedAnswer(existingAnswer.selectedAnswer);
       setIsAnswered(true);
+      // Auto-advance after showing feedback for already answered questions
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+      }
+      questionTimeoutRef.current = setTimeout(() => {
+        const wasLastQuestion = currentQuestion === questions.length - 1;
+        if (!wasLastQuestion) {
+          nextQuestion();
+        } else {
+          finishGame();
+        }
+      }, 2000) as unknown as number;
     } else {
       setSelectedAnswer(null);
       setIsAnswered(false);
+      
+      // Set 1-minute auto-advance timeout to prevent freezes
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+      }
+      questionTimeoutRef.current = setTimeout(() => {
+        if (__DEV__) console.log('Auto-advancing after 1 minute to prevent freeze');
+        // Auto-advance to next question if stuck
+        const wasLastQuestion = currentQuestion === questions.length - 1;
+        if (!wasLastQuestion) {
+          nextQuestion();
+        } else {
+          finishGame();
+        }
+      }, 60000) as unknown as number; // 1 minute = 60000ms
     }
+    
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+        questionTimeoutRef.current = null;
+      }
     };
   }, [currentQuestion, questions, isFocused, loading, isInitializing]);
 
@@ -373,6 +550,12 @@ export default function GameScreen() {
       if (alreadyRecorded && !isTimeUp) {
         if (__DEV__) console.log('Answer already recorded for this question; ignoring');
         return;
+      }
+
+      // Clear the 1-minute auto-advance timeout since user is answering
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+        questionTimeoutRef.current = null;
       }
 
       setSelectedAnswer(answerIndex);
@@ -543,6 +726,12 @@ export default function GameScreen() {
       stopTimeoutRef.current = null;
     }
     
+    // Clear the 1-minute auto-advance timeout
+    if (questionTimeoutRef.current) {
+      clearTimeout(questionTimeoutRef.current);
+      questionTimeoutRef.current = null;
+    }
+    
     setCurrentQuestion(prev => prev + 1);
     setSelectedAnswer(null);
     setShowFeedback(false);
@@ -570,6 +759,12 @@ export default function GameScreen() {
         stopTimeoutRef.current = null;
       }
       
+      // Clear the 1-minute auto-advance timeout
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+        questionTimeoutRef.current = null;
+      }
+      
       setCurrentQuestion(prev => prev - 1);
       setSelectedAnswer(null);
       setShowFeedback(false);
@@ -586,8 +781,24 @@ export default function GameScreen() {
   const finishGame = async (providedAnswers?: any[]) => {
     if (__DEV__) console.log('Finishing game');
 
-    // Clear audio cache when game ends
-    clearCache();
+    // Clear audio cache when game ends (only for audio mode)
+    if (!isLyricsMode) {
+      clearCache();
+    }
+
+    // Remove from paused games if it exists
+    if (resumeGameId) {
+      try {
+        const pausedGames = await AsyncStorage.getItem('pausedGames');
+        if (pausedGames) {
+          const games = JSON.parse(pausedGames);
+          const filtered = games.filter((g: any) => g.id !== resumeGameId);
+          await AsyncStorage.setItem('pausedGames', JSON.stringify(filtered));
+        }
+      } catch (e) {
+        if (__DEV__) console.log('Error removing paused game:', e);
+      }
+    }
 
     // Show calculating animation immediately
     setCalculatingScore(true);
@@ -660,13 +871,18 @@ export default function GameScreen() {
         (async () => {
           try {
             const correctAnswers = answersToUse.filter((a: any) => a && a.isCorrect).length;
+            // Use resumeGameId if this was a resumed game, otherwise generate new ID
+            const gameId = resumeGameId || Date.now().toString();
+            
             const historyEntry = {
-              id: Date.now().toString(),
+              id: gameId, // Use same ID as paused game if resuming
+              status: 'completed', // Mark as completed
               category: params.category || 'Unknown',
               difficulty: params.difficulty || 'standard',
               gameplay: params.gameplay || 'song',
               quizMode: params.quizMode || 'audio',
-              score: Math.max(0, score), // Ensure non-negative
+              speedMode: params.speedMode || 'false',
+              score: Math.max(0, finalScore), // Use calculated finalScore
               totalQuestions: questions.length,
               accuracy: questions.length > 0 ? Math.round((correctAnswers / questions.length) * 100) : 0,
               datePlayed: new Date().toISOString(),
@@ -696,10 +912,14 @@ export default function GameScreen() {
               history = [];
             }
 
+            // Remove existing entry with same ID (if it was paused) before adding completed one
+            history = history.filter((h: any) => h.id !== gameId);
             history.unshift(historyEntry); // Add to top
             if (history.length > 50) history.splice(50); // Keep last 50
 
             await AsyncStorage.setItem('gameHistory', JSON.stringify(history));
+            
+            if (__DEV__) console.log('Game completed and saved to history:', gameId);
           } catch (historyError) {
             if (__DEV__) console.log('History save failed:', historyError);
           }
@@ -1067,23 +1287,11 @@ export default function GameScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.homeButton}
-            onPress={async () => {
-              try {
-                if (stopTimeoutRef.current) {
-                  clearTimeout(stopTimeoutRef.current);
-                  stopTimeoutRef.current = null;
-                }
-                if (soundRef.current) {
-                  await soundRef.current.stopAsync().catch(() => {});
-                  await soundRef.current.unloadAsync().catch(() => {});
-                  soundRef.current = null;
-                }
-              } finally {
-                router.back();
-              }
+            onPress={() => {
+              setShowPauseModal(true);
             }}
           >
-            <Home size={20} color="#FFFFFF" />
+            <PauseCircle size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
             <Text style={styles.questionCounter}>
@@ -1327,6 +1535,70 @@ export default function GameScreen() {
             All music belongs to their respective owners.
           </Text>
         </TouchableOpacity>
+
+        {/* Pause/Exit Modal */}
+        <Modal
+          visible={showPauseModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowPauseModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Pause Game</Text>
+              <Text style={styles.modalText}>
+                What would you like to do?
+              </Text>
+              
+              <View style={styles.pauseModalButtons}>
+                <TouchableOpacity
+                  style={[styles.pauseModalButton, styles.pauseButton]}
+                  onPress={async () => {
+                    await savePausedGame('pause');
+                    setShowPauseModal(false);
+                    // Clean up audio
+                    if (soundRef.current) {
+                      await soundRef.current.stopAsync().catch(() => {});
+                      await soundRef.current.unloadAsync().catch(() => {});
+                      soundRef.current = null;
+                    }
+                    router.back();
+                  }}
+                >
+                  <PauseCircle size={24} color="#FFFFFF" />
+                  <Text style={styles.pauseModalButtonText}>Pause</Text>
+                  <Text style={styles.pauseModalButtonSubtext}>Continue later</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.pauseModalButton, styles.exitButton]}
+                  onPress={async () => {
+                    await savePausedGame('exit');
+                    setShowPauseModal(false);
+                    // Clean up audio
+                    if (soundRef.current) {
+                      await soundRef.current.stopAsync().catch(() => {});
+                      await soundRef.current.unloadAsync().catch(() => {});
+                      soundRef.current = null;
+                    }
+                    router.back();
+                  }}
+                >
+                  <X size={24} color="#FFFFFF" />
+                  <Text style={styles.pauseModalButtonText}>Exit</Text>
+                  <Text style={styles.pauseModalButtonSubtext}>End game</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowPauseModal(false)}
+              >
+                <Text style={styles.modalCloseButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* Disclaimer Modal */}
         <Modal
@@ -1788,5 +2060,36 @@ const styles = StyleSheet.create({
   },
   bannerAd: {
     width: '100%',
+  },
+  pauseModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginVertical: 20,
+  },
+  pauseModalButton: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  pauseButton: {
+    backgroundColor: '#8B5CF6',
+  },
+  exitButton: {
+    backgroundColor: '#EF4444',
+  },
+  pauseModalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+  },
+  pauseModalButtonSubtext: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    opacity: 0.8,
   },
 });
